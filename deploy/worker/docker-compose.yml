@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Arroyo Worker
+  arroyo-worker:
+    build:
+      context: ../../docker/arroyo
+      dockerfile: Dockerfile
+    container_name: arroyo-worker-${NODE_ID}
+    restart: unless-stopped
+    network_mode: "host"  # For easy inter-Pi communication
+    environment:
+      # Worker identification
+      ARROYO__NODE_ID: ${NODE_ID}
+      ARROYO__WORKER_ID: ${WORKER_ID}
+      # Controller connection
+      ARROYO__CONTROLLER_ENDPOINT: http://192.168.2.70:9190
+      # Checkpoint storage (MinIO on controller)
+      ARROYO__CHECKPOINT_URL: s3://checkpoints
+      AWS_ENDPOINT_URL: http://192.168.2.70:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      # Performance settings for Raspberry Pi
+      ARROYO__TASK_SLOTS: 2
+      ARROYO__MEMORY_PER_SLOT_MB: 768
+      # Logging
+      RUST_LOG: info
+    volumes:
+      - worker_data:/arroyo/data
+    command: ["worker"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6900/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  worker_data:

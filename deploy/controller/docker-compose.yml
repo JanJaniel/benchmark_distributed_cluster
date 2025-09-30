@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+
+  # Kafka broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://192.168.2.70:9094,INTERNAL://kafka:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Performance settings for Raspberry Pi
+      KAFKA_HEAP_OPTS: "-Xmx768M -Xms512M"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      # Tuning for better performance
+      KAFKA_NUM_NETWORK_THREADS: 4
+      KAFKA_NUM_IO_THREADS: 4
+      KAFKA_SOCKET_SEND_BUFFER_BYTES: 102400
+      KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
+      KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  # MinIO for S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: http://192.168.2.70:9001
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO client for initial setup
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/checkpoints || true;
+      mc mb local/benchmark-results || true;
+      mc policy set public local/checkpoints;
+      mc policy set public local/benchmark-results;
+      exit 0;
+      "
+
+  # Arroyo Controller
+  arroyo-controller:
+    build:
+      context: ../../docker/arroyo
+      dockerfile: Dockerfile
+    container_name: arroyo-controller
+    restart: unless-stopped
+    depends_on:
+      - minio
+    ports:
+      - "8000:8000"  # Web UI
+      - "8001:8001"  # HTTP API
+      - "9190:9190"  # gRPC
+    environment:
+      # Arroyo configuration
+      ARROYO__DATABASE_TYPE: sqlite
+      ARROYO__DATABASE_PATH: /arroyo/data/arroyo.db
+      ARROYO__SCHEDULER: process
+      ARROYO__CHECKPOINT_URL: s3://checkpoints
+      # S3 configuration for MinIO
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      # Performance settings
+      ARROYO__TASK_SLOTS: 2
+      ARROYO__DEFAULT_PARALLELISM: 9
+      RUST_LOG: info
+    volumes:
+      - arroyo_data:/arroyo/data
+      - ../../config/arroyo-config.toml:/arroyo/config/arroyo.toml:ro
+    command: ["controller"]
+
+volumes:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+  minio_data:
+  arroyo_data:

@@ -1,0 +1,78 @@
+# Cluster topology configuration for 10 Raspberry Pis
+cluster:
+  name: "pi-benchmark-cluster"
+  controller:
+    hostname: "b1pc10"
+    ip: "192.168.2.70"
+    services:
+      kafka:
+        broker: "192.168.2.70:9094"
+        internal: "kafka:19092"
+        topics:
+          - name: "nexmark-person"
+            partitions: 9
+            replication: 1
+          - name: "nexmark-auction" 
+            partitions: 9
+            replication: 1
+          - name: "nexmark-bid"
+            partitions: 9
+            replication: 1
+      minio:
+        endpoint: "192.168.2.70:9000"
+        console: "192.168.2.70:9001"
+        access_key: "minioadmin"
+        secret_key: "minioadmin"
+        buckets:
+          - "checkpoints"
+          - "benchmark-results"
+      arroyo:
+        web_ui: "http://192.168.2.70:8000"
+        api: "http://192.168.2.70:8001"
+        grpc: "http://192.168.2.70:9190"
+  
+  workers:
+    - name: "b1pc11"
+      ip: "192.168.2.71"
+      role: "worker"
+      node_id: "worker-1"
+    - name: "b1pc12"
+      ip: "192.168.2.72"
+      role: "worker"
+      node_id: "worker-2"
+    - name: "b1pc13"
+      ip: "192.168.2.73"
+      role: "worker"
+      node_id: "worker-3"
+    - name: "b1pc14"
+      ip: "192.168.2.74"
+      role: "worker" 
+      node_id: "worker-4"
+    - name: "b1pc15"
+      ip: "192.168.2.75"
+      role: "worker"
+      node_id: "worker-5"
+    - name: "b1pc16"
+      ip: "192.168.2.76"
+      role: "worker"
+      node_id: "worker-6"
+    - name: "b1pc17"
+      ip: "192.168.2.77"
+      role: "worker"
+      node_id: "worker-7"
+    - name: "b1pc18"
+      ip: "192.168.2.78"
+      role: "worker"
+      node_id: "worker-8"
+    - name: "b1pc19"
+      ip: "192.168.2.79"
+      role: "worker"
+      node_id: "worker-9"
+
+benchmark:
+  queries: ["q1", "q2", "q3", "q5", "q7", "q8"]
+  events_per_second: 50000  # Total across all partitions
+  total_events: 10000000    # 10M events for better distributed testing
+  warmup_events: 100000
+  parallelism: 9            # One per worker
+  checkpoint_interval_ms: 30000  # 30 seconds

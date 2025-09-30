@@ -1,0 +1,38 @@
+# Arroyo configuration for distributed deployment
+[arroyo]
+# Database configuration (SQLite for simplicity)
+database_type = "sqlite"
+database_path = "/arroyo/data/arroyo.db"
+
+# Scheduler configuration
+scheduler = "process"
+
+# Checkpoint configuration
+checkpoint_url = "s3://checkpoints"
+checkpoint_interval_ms = 30000
+
+# Resource limits per worker (suitable for Raspberry Pi)
+task_slots = 2
+memory_per_slot_mb = 768
+
+# Network configuration
+controller_grpc_port = 9190
+controller_http_port = 8001
+web_ui_port = 8000
+
+# Performance tuning for Raspberry Pi
+max_parallelism = 9
+default_parallelism = 9
+
+[s3]
+# MinIO configuration (S3-compatible storage)
+endpoint = "http://192.168.2.70:9000"
+access_key_id = "minioadmin"
+secret_access_key = "minioadmin"
+region = "us-east-1"
+force_path_style = true
+
+[monitoring]
+# Metrics configuration
+metrics_interval_ms = 5000
+enable_prometheus = false  # Use built-in metrics instead
