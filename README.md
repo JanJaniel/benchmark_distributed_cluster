@@ -155,8 +155,6 @@ curl http://192.168.2.42:8000/api/v1/workers
 2. **Out of memory**: Reduce parallelism or events per second
 3. **Kafka connection errors**: Verify Kafka is running and accessible
 
-## For Your Advisor
-
 ### Minimal System Impact
 
 All components run in Docker containers:
