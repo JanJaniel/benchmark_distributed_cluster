@@ -49,12 +49,33 @@ echo "Queries: $QUERIES"
 echo "Parallelism: $PARALLELISM"
 echo ""
 
-# Check cluster health
-echo "Checking cluster health..."
-if ! curl -f http://$CONTROLLER_IP:$ARROYO_WEB_PORT/health >/dev/null 2>&1; then
-    echo "❌ Arroyo controller is not healthy"
-    exit 1
-fi
+# Generate timestamp for metrics file
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+METRICS_FILE="$PROJECT_ROOT/metrics_${TIMESTAMP}.json"
+
+# Start metrics collector in background
+echo "Starting metrics collector..."
+python3 "$PROJECT_ROOT/monitoring/collect-metrics.py" \
+    --config "$PROJECT_ROOT/config/cluster-topology.yaml" \
+    --interval 5 \
+    --output "$METRICS_FILE" &
+METRICS_PID=$!
+echo "Metrics collector started (PID: $METRICS_PID)"
+echo "Metrics will be saved to: $METRICS_FILE"
+
+# Cleanup function to stop metrics collector
+cleanup() {
+    echo -e "\nStopping metrics collector..."
+    if kill -0 $METRICS_PID 2>/dev/null; then
+        kill $METRICS_PID
+        echo "Metrics collector stopped"
+    fi
+    echo "Metrics saved to: $METRICS_FILE"
+    exit 0
+}
+
+# Set trap to cleanup on exit
+trap cleanup EXIT INT TERM
 
 # Start data generator
 echo "Starting Nexmark data generator..."
@@ -130,14 +151,31 @@ for query in "${QUERY_ARRAY[@]}"; do
     fi
 done
 
+# Give metrics collector time to start
+sleep 2
+
 # Monitor execution
 echo -e "\nMonitoring benchmark execution..."
 echo "Press Ctrl+C to stop monitoring (benchmark will continue running)"
+echo "Comprehensive metrics are being collected in: $METRICS_FILE"
 
 # Function to get pipeline metrics
 get_metrics() {
     local pipeline_id=$1
     curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pipeline_id}/metrics"
+}
+
+# Function to display comprehensive metrics from collector output
+display_comprehensive_metrics() {
+    if [ -f "$METRICS_FILE" ] && [ -s "$METRICS_FILE" ]; then
+        # Get latest metrics entry from file
+        local latest_metrics=$(tail -1 "$METRICS_FILE" 2>/dev/null | jq -r '. // empty' 2>/dev/null)
+        if [ ! -z "$latest_metrics" ]; then
+            # Extract worker count
+            local worker_count=$(echo "$latest_metrics" | jq -r '.summary.active_workers // 0')
+            echo "Active Workers: $worker_count"
+        fi
+    fi
 }
 
 # Monitor loop
@@ -148,14 +186,28 @@ while true; do
     
     echo -e "\n--- Metrics at ${elapsed}s ---"
     
+    # Display comprehensive metrics from collector
+    display_comprehensive_metrics
+    
+    # Display pipeline-specific metrics
+    total_events=0
+    total_rate=0
+    
     for pid in "${PIPELINE_IDS[@]}"; do
         metrics=$(get_metrics "$pid")
         if [ ! -z "$metrics" ]; then
             events=$(echo "$metrics" | jq -r '.events_processed // 0')
             rate=$(echo "$metrics" | jq -r '.events_per_second // 0')
             echo "Pipeline $pid: $events events, $rate events/sec"
+            total_events=$((total_events + events))
+            total_rate=$(echo "$total_rate + $rate" | bc)
         fi
     done
+    
+    if [ ${#PIPELINE_IDS[@]} -gt 1 ]; then
+        echo "---"
+        echo "Total: $total_events events, $total_rate events/sec"
+    fi
     
     sleep 5
 done
