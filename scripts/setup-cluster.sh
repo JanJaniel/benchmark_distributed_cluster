@@ -77,10 +77,17 @@ done
 # Step 3: Copy project files to all nodes
 echo -e "\n3. Copying project files to all nodes..."
 
-# Controller node
-echo "Copying files to controller (pi1)..."
-ssh picocluster@$CONTROLLER_IP "mkdir -p ~/benchmark_distributed_cluster"
-scp -r "$PROJECT_ROOT"/* picocluster@$CONTROLLER_IP:~/benchmark_distributed_cluster/
+# Check if we're running on the controller node
+CURRENT_IP=$(hostname -I | awk '{print $1}')
+
+# Controller node - only copy if we're not already on the controller
+if [[ "$CURRENT_IP" != "$CONTROLLER_IP" ]]; then
+    echo "Copying files to controller (pi1)..."
+    ssh picocluster@$CONTROLLER_IP "mkdir -p ~/benchmark_distributed_cluster"
+    scp -r "$PROJECT_ROOT"/* picocluster@$CONTROLLER_IP:~/benchmark_distributed_cluster/
+else
+    echo "Skipping controller copy (running on controller node)"
+fi
 
 # Worker nodes
 for i in {1..9}; do
