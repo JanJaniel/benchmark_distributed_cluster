@@ -14,8 +14,9 @@ if [ ! -f /.dockerenv ]; then
         -v ~/.ssh:/root/.ssh:ro \
         --network host \
         -w /benchmark \
+        --entrypoint /bin/bash \
         arroyo-pi:latest \
-        bash -c "./scripts/run-benchmark.sh $@"
+        -c "./scripts/run-benchmark.sh $@"
 fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
@@ -53,22 +54,36 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "========================================="
-echo "Running Distributed Benchmark"
-echo "========================================="
-echo "Events per second: $EVENTS_PER_SECOND"
-echo "Total events: $TOTAL_EVENTS"
-echo "Queries: $QUERIES"
-echo "Parallelism: $PARALLELISM"
-echo ""
-
-# Generate timestamp for metrics file
+# Generate timestamp for log and metrics files
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_DIR="$PROJECT_ROOT/logs"
+LOG_FILE="$LOG_DIR/benchmark_${TIMESTAMP}.log"
 METRICS_FILE="$PROJECT_ROOT/metrics_${TIMESTAMP}.json"
 
+# Create logs directory if it doesn't exist
+mkdir -p "$LOG_DIR"
+
+# Function to log messages to both console and file
+log() {
+    echo "$@" | tee -a "$LOG_FILE"
+}
+
+# Start logging
+{
+log "========================================="
+log "Running Distributed Benchmark"
+log "========================================="
+log "Timestamp: $(date)"
+log "Events per second: $EVENTS_PER_SECOND"
+log "Total events: $TOTAL_EVENTS"
+log "Queries: $QUERIES"
+log "Parallelism: $PARALLELISM"
+log "Log file: $LOG_FILE"
+log ""
+
 # Start metrics collector in background using Docker
-echo "Starting metrics collector..."
-ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF
+log "Starting metrics collector..."
+ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | tee -a "$LOG_FILE"
 docker run -d --rm \
     --name metrics-collector \
     --network host \
@@ -83,15 +98,34 @@ EOF
 
 # Get container ID for cleanup
 METRICS_CONTAINER="metrics-collector"
-echo "Metrics collector started in Docker container"
-echo "Metrics will be saved to: $METRICS_FILE"
+log "Metrics collector started in Docker container"
+log "Metrics will be saved to: $METRICS_FILE"
 
-# Cleanup function to stop metrics collector
+# Track if cleanup has been done
+CLEANUP_DONE=false
+
+# Cleanup function to stop all components
 cleanup() {
-    echo -e "\nStopping metrics collector..."
-    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop $METRICS_CONTAINER 2>/dev/null || true"
-    echo "Metrics collector stopped"
-    echo "Metrics saved to: $METRICS_FILE"
+    # Prevent multiple cleanup runs
+    if [ "$CLEANUP_DONE" = true ]; then
+        return
+    fi
+    CLEANUP_DONE=true
+    
+    log ""
+    log "Stopping benchmark components..."
+    
+    # Stop metrics collector
+    log "Stopping metrics collector..."
+    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop $METRICS_CONTAINER 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    
+    # Stop nexmark generator  
+    log "Stopping data generator..."
+    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop nexmark-generator 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    
+    log "Cleanup completed"
+    log "Metrics saved to: $METRICS_FILE"
+    log "Logs saved to: $LOG_FILE"
     exit 0
 }
 
@@ -99,8 +133,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Start data generator
-echo "Starting Nexmark data generator..."
-ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF
+log "Starting Nexmark data generator..."
+ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | tee -a "$LOG_FILE"
 cd ~/benchmark_distributed_cluster
 docker run -d --rm \
     --name nexmark-generator \
@@ -118,11 +152,11 @@ submit_query() {
     local query_file="$PROJECT_ROOT/queries/nexmark_${query_name}.sql"
     
     if [ ! -f "$query_file" ]; then
-        echo "❌ Query file not found: $query_file"
+        log "❌ Query file not found: $query_file"
         return 1
     fi
     
-    echo "Submitting query: $query_name"
+    log "Submitting query: $query_name"
     
     # Read and modify the query
     local query_content=$(cat "$query_file")
@@ -152,17 +186,21 @@ submit_query() {
     local pipeline_id=$(echo "$response" | jq -r '.id // empty')
     
     if [ -z "$pipeline_id" ]; then
-        echo "❌ Failed to create pipeline for $query_name"
-        echo "Response: $response"
+        log "❌ Failed to create pipeline for $query_name"
+        log "Response: $response"
+        # Also save full response to log for debugging
+        echo "Full API Response for $query_name:" >> "$LOG_FILE"
+        echo "$response" >> "$LOG_FILE"
         return 1
     fi
     
-    echo "✅ Pipeline created: $pipeline_id"
+    log "✅ Pipeline created: $pipeline_id"
     return 0
 }
 
 # Submit all queries
-echo -e "\nSubmitting queries..."
+log ""
+log "Submitting queries..."
 IFS=',' read -ra QUERY_ARRAY <<< "$QUERIES"
 PIPELINE_IDS=()
 
@@ -176,9 +214,10 @@ done
 sleep 2
 
 # Monitor execution
-echo -e "\nMonitoring benchmark execution..."
-echo "Press Ctrl+C to stop monitoring (benchmark will continue running)"
-echo "Comprehensive metrics are being collected in: $METRICS_FILE"
+log ""
+log "Monitoring benchmark execution..."
+log "Press Ctrl+C to stop monitoring (benchmark will continue running)"
+log "Comprehensive metrics are being collected in: $METRICS_FILE"
 
 # Function to get pipeline metrics
 get_metrics() {
@@ -193,7 +232,7 @@ display_comprehensive_metrics() {
     if [ ! -z "$latest_metrics" ]; then
         # Extract worker count
         local worker_count=$(echo "$latest_metrics" | jq -r '.summary.active_workers // 0')
-        echo "Active Workers: $worker_count"
+        log "Active Workers: $worker_count"
     fi
 }
 
@@ -203,7 +242,8 @@ while true; do
     current_time=$(date +%s)
     elapsed=$((current_time - start_time))
     
-    echo -e "\n--- Metrics at ${elapsed}s ---"
+    log ""
+    log "--- Metrics at ${elapsed}s ---"
     
     # Display comprehensive metrics from collector
     display_comprehensive_metrics
@@ -217,16 +257,18 @@ while true; do
         if [ ! -z "$metrics" ]; then
             events=$(echo "$metrics" | jq -r '.events_processed // 0')
             rate=$(echo "$metrics" | jq -r '.events_per_second // 0')
-            echo "Pipeline $pid: $events events, $rate events/sec"
+            log "Pipeline $pid: $events events, $rate events/sec"
             total_events=$((total_events + events))
             total_rate=$(echo "$total_rate + $rate" | bc)
         fi
     done
     
     if [ ${#PIPELINE_IDS[@]} -gt 1 ]; then
-        echo "---"
-        echo "Total: $total_events events, $total_rate events/sec"
+        log "---"
+        log "Total: $total_events events, $total_rate events/sec"
     fi
     
     sleep 5
 done
+
+} 2>&1  # End of logging block - this ensures all output is captured
