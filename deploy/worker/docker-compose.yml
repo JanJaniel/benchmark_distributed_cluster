@@ -20,7 +20,7 @@ services:
       RUST_LOG: info
     volumes:
       - worker_data:/arroyo/data
-    command: ["worker"]
+    command: ["node"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6900/health"]
       interval: 30s

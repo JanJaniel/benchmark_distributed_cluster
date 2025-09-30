@@ -5,7 +5,8 @@ database_type = "sqlite"
 database_path = "/arroyo/data/arroyo.db"
 
 # Scheduler configuration
-scheduler = "process"
+# Using node scheduler for distributed deployment
+scheduler = "node"
 
 # Checkpoint configuration
 checkpoint_url = "s3://checkpoints"
