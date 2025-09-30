@@ -104,6 +104,12 @@ echo -e "\n4. Building Docker images..."
 echo "Building Arroyo image on controller..."
 ssh picocluster@$CONTROLLER_IP "cd ~/benchmark_distributed_cluster && docker build -t arroyo-pi:latest -f docker/arroyo/Dockerfile docker/arroyo"
 
+echo "Building Nexmark generator image on controller..."
+ssh picocluster@$CONTROLLER_IP "cd ~/benchmark_distributed_cluster && docker build -t nexmark-generator:latest -f docker/nexmark-generator/Dockerfile docker/nexmark-generator"
+
+echo "Building Metrics collector image on controller..."
+ssh picocluster@$CONTROLLER_IP "cd ~/benchmark_distributed_cluster && docker build -t metrics-collector:latest -f docker/metrics-collector/Dockerfile docker/metrics-collector"
+
 # Build on each worker
 for i in {1..9}; do
     WORKER_IP=$(get_worker_ip $i)

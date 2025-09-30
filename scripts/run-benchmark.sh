@@ -53,23 +53,31 @@ echo ""
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 METRICS_FILE="$PROJECT_ROOT/metrics_${TIMESTAMP}.json"
 
-# Start metrics collector in background
+# Start metrics collector in background using Docker
 echo "Starting metrics collector..."
-python3 "$PROJECT_ROOT/monitoring/collect-metrics.py" \
-    --config "$PROJECT_ROOT/config/cluster-topology.yaml" \
+ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF
+docker run -d --rm \
+    --name metrics-collector \
+    --network host \
+    -v ~/benchmark_distributed_cluster/config:/app/config:ro \
+    -v ~/benchmark_distributed_cluster:/app/output \
+    metrics-collector:latest \
+    python collect-metrics.py \
+    --config /app/config/cluster-topology.yaml \
     --interval 5 \
-    --output "$METRICS_FILE" &
-METRICS_PID=$!
-echo "Metrics collector started (PID: $METRICS_PID)"
+    --output /app/output/metrics_${TIMESTAMP}.json
+EOF
+
+# Get container ID for cleanup
+METRICS_CONTAINER="metrics-collector"
+echo "Metrics collector started in Docker container"
 echo "Metrics will be saved to: $METRICS_FILE"
 
 # Cleanup function to stop metrics collector
 cleanup() {
     echo -e "\nStopping metrics collector..."
-    if kill -0 $METRICS_PID 2>/dev/null; then
-        kill $METRICS_PID
-        echo "Metrics collector stopped"
-    fi
+    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop $METRICS_CONTAINER 2>/dev/null || true"
+    echo "Metrics collector stopped"
     echo "Metrics saved to: $METRICS_FILE"
     exit 0
 }
@@ -167,14 +175,12 @@ get_metrics() {
 
 # Function to display comprehensive metrics from collector output
 display_comprehensive_metrics() {
-    if [ -f "$METRICS_FILE" ] && [ -s "$METRICS_FILE" ]; then
-        # Get latest metrics entry from file
-        local latest_metrics=$(tail -1 "$METRICS_FILE" 2>/dev/null | jq -r '. // empty' 2>/dev/null)
-        if [ ! -z "$latest_metrics" ]; then
-            # Extract worker count
-            local worker_count=$(echo "$latest_metrics" | jq -r '.summary.active_workers // 0')
-            echo "Active Workers: $worker_count"
-        fi
+    # Get latest metrics from remote file
+    local latest_metrics=$(ssh ${CLUSTER_USER}@${CONTROLLER_IP} "tail -1 ~/benchmark_distributed_cluster/metrics_${TIMESTAMP}.json 2>/dev/null" | jq -r '. // empty' 2>/dev/null)
+    if [ ! -z "$latest_metrics" ]; then
+        # Extract worker count
+        local worker_count=$(echo "$latest_metrics" | jq -r '.summary.active_workers // 0')
+        echo "Active Workers: $worker_count"
     fi
 }
 
