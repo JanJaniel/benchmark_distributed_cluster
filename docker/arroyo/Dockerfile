@@ -5,6 +5,9 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
+    jq \
+    bc \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Download Arroyo binary for ARM64

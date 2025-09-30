@@ -5,6 +5,19 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# If not running in Docker, re-run this script inside Docker
+if [ ! -f /.dockerenv ]; then
+    echo "Running benchmark inside Docker container..."
+    exec docker run --rm -it \
+        -v "$PROJECT_ROOT":/benchmark \
+        -v ~/.ssh:/root/.ssh:ro \
+        --network host \
+        -w /benchmark \
+        arroyo-pi:latest \
+        bash -c "./scripts/run-benchmark.sh $@"
+fi
+
 source "$SCRIPT_DIR/cluster-env.sh"
 
 # Default values
