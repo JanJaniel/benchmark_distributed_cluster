@@ -21,7 +21,7 @@ services:
       AWS_REGION: us-east-1
       # Performance settings for Raspberry Pi
       ARROYO__TASK_SLOTS: 2
-      ARROYO__MEMORY_PER_SLOT_MB: 768
+      # Removed ARROYO__MEMORY_PER_SLOT_MB - not valid in current Arroyo version
       # Logging
       RUST_LOG: info
     volumes:
