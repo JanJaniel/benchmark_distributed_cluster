@@ -10,16 +10,8 @@ echo "========================================="
 echo "Query 1 Test - Distributed Arroyo"
 echo "========================================="
 
-# Prüfe ob Controller läuft
-echo "1. Checking controller health..."
-if ! curl -f http://$CONTROLLER_IP:8000/health >/dev/null 2>&1; then
-    echo "❌ Controller not healthy! Please run setup first."
-    exit 1
-fi
-echo "✅ Controller is healthy"
-
-# Prüfe Worker
-echo -e "\n2. Checking workers..."
+# Prüfe Worker direkt über API
+echo "1. Checking workers..."
 WORKERS=$(curl -s http://$CONTROLLER_IP:8001/api/v1/workers | jq -r '. | length // 0')
 echo "Connected workers: $WORKERS"
 if [ "$WORKERS" -lt 5 ]; then
@@ -27,14 +19,14 @@ if [ "$WORKERS" -lt 5 ]; then
 fi
 
 # Starte Generator mit weniger Events für Test
-echo -e "\n3. Starting data generator (test mode: 100k events)..."
+echo -e "\n3. Starting data generator (test mode: 1M events)..."
 docker stop nexmark-generator 2>/dev/null || true
 docker run -d --rm \
     --name nexmark-generator \
     --network host \
     -e KAFKA_BROKER=${CONTROLLER_IP}:${KAFKA_PORT} \
     -e EVENTS_PER_SECOND=10000 \
-    -e TOTAL_EVENTS=100000 \
+    -e TOTAL_EVENTS=1000000 \
     -v $(dirname $SCRIPT_DIR)/nexmark-generator-deterministic.py:/app/generator/nexmark-generator-deterministic.py:ro \
     nexmark-generator:latest
 
@@ -78,9 +70,7 @@ echo "✅ Pipeline created: $PIPELINE_ID"
 
 # Monitor für 30 Sekunden
 echo -e "\n6. Monitoring pipeline for 30 seconds..."
-echo "You can also check:"
-echo "  - Web UI: http://${CONTROLLER_IP}:8000"
-echo "  - MinIO: http://${CONTROLLER_IP}:9001 (minioadmin/minioadmin)"
+echo "MinIO Console: http://${CONTROLLER_IP}:9001 (minioadmin/minioadmin)"
 echo ""
 
 for i in {1..6}; do

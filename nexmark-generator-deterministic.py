@@ -18,6 +18,7 @@ import multiprocessing
 from datetime import datetime, timezone
 from confluent_kafka import Producer
 import random
+import os
 
 # Constants from official Nexmark
 FIRST_PERSON_ID = 1000
@@ -361,11 +362,12 @@ def worker(worker_id, bootstrap_servers, events_per_second, max_events=None, use
 
 def main():
     """Main entry point."""
-    # Parse arguments
-    bootstrap_servers = 'localhost:9092'
-    events_per_second = 10000
+    # Parse arguments - first try environment variables, then command line args
+    bootstrap_servers = os.getenv('KAFKA_BROKER', '192.168.2.70:9094')
+    events_per_second = int(os.getenv('EVENTS_PER_SECOND', 10000))
     num_workers = 1
-    max_events = None
+    total_events_env = os.getenv('TOTAL_EVENTS')
+    max_events = int(total_events_env) if total_events_env else None
     use_iso = False
     use_berlin_time = False
     

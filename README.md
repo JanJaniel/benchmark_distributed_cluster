@@ -12,7 +12,7 @@ This folder contains the complete implementation for running a truly distributed
 ## Prerequisites
 
 1. **Hardware**: 10 Raspberry Pi devices (4GB+ RAM recommended)
-2. **Network**: All Pis on same network with static IPs (192.168.2.42-51)
+2. **Network**: All Pis on same network with static IPs (192.168.2.70-79)
 3. **OS**: Raspberry Pi OS 64-bit on all devices
 4. **User**: `picocluster` user with sudo access on all Pis
 
@@ -52,11 +52,11 @@ python collect-metrics.py
 ### Network Configuration
 
 Ensure all Pis have static IPs:
-- Pi1: 192.168.2.42 (Controller)
-- Pi2: 192.168.2.43 (Worker 1)
-- Pi3: 192.168.2.44 (Worker 2)
+- Pi1: 192.168.2.70 (Controller)
+- Pi2: 192.168.2.71 (Worker 1)
+- Pi3: 192.168.2.72 (Worker 2)
 - ... continuing to ...
-- Pi10: 192.168.2.51 (Worker 9)
+- Pi10: 192.168.2.79 (Worker 9)
 
 ### Docker Installation
 
@@ -68,9 +68,9 @@ sudo usermod -aG docker $USER
 
 ### Service Endpoints
 
-- **Arroyo Web UI**: http://192.168.2.42:8000
-- **MinIO Console**: http://192.168.2.42:9001
-- **Kafka Broker**: 192.168.2.42:9094
+- **Arroyo Web UI**: http://192.168.2.70:8000
+- **MinIO Console**: http://192.168.2.70:9001
+- **Kafka Broker**: 192.168.2.70:9094
 
 ## How It Works
 
@@ -136,17 +136,17 @@ python monitoring/collect-metrics.py --once
 
 Controller services:
 ```bash
-ssh picocluster@192.168.2.42 "cd ~/benchmark_distributed_cluster/deploy/controller && docker compose logs -f"
+ssh picocluster@192.168.2.70 "cd ~/benchmark_distributed_cluster/deploy/controller && docker compose logs -f"
 ```
 
 Worker services:
 ```bash
-ssh picocluster@192.168.2.43 "cd ~/benchmark_distributed_cluster/deploy/worker && docker compose logs -f"
+ssh picocluster@192.168.2.71 "cd ~/benchmark_distributed_cluster/deploy/worker && docker compose logs -f"
 ```
 
 ### Verify Worker Connection
 ```bash
-curl http://192.168.2.42:8000/api/v1/workers
+curl http://192.168.2.70:8000/api/v1/workers
 ```
 
 ### Common Issues
