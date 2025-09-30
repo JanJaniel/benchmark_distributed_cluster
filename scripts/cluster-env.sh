@@ -13,7 +13,7 @@ WORKER_START_OCTET=71
 NUM_WORKERS=9
 
 # Default user
-CLUSTER_USER="jan"
+CLUSTER_USER="picocluster"
 
 # Service ports
 KAFKA_PORT=9094
