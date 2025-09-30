@@ -82,9 +82,7 @@ services:
 
   # Arroyo Controller
   arroyo-controller:
-    build:
-      context: ../../docker/arroyo
-      dockerfile: Dockerfile
+    image: ghcr.io/arroyosystems/arroyo:latest
     container_name: arroyo-controller
     restart: unless-stopped
     depends_on:

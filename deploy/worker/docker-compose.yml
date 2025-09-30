@@ -3,9 +3,7 @@ version: '3.8'
 services:
   # Arroyo Worker
   arroyo-worker:
-    build:
-      context: ../../docker/arroyo
-      dockerfile: Dockerfile
+    image: ghcr.io/arroyosystems/arroyo:latest
     container_name: arroyo-worker-${NODE_ID}
     restart: unless-stopped
     network_mode: "host"  # For easy inter-Pi communication
