@@ -9,14 +9,17 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # If not running in Docker, re-run this script inside Docker
 if [ ! -f /.dockerenv ]; then
     echo "Running benchmark inside Docker container..."
+    # Run as root to avoid permission issues with SSH keys
     exec docker run --rm -it \
+        --user root \
         -v "$PROJECT_ROOT":/benchmark \
-        -v ~/.ssh:/root/.ssh:ro \
+        -v "$HOME/.ssh:/root/.ssh:ro" \
+        -e CLUSTER_USER="$USER" \
         --network host \
         -w /benchmark \
         --entrypoint /bin/bash \
         arroyo-pi:latest \
-        -c "./scripts/run-benchmark.sh $@"
+        /benchmark/scripts/run-benchmark.sh "$@"
 fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
