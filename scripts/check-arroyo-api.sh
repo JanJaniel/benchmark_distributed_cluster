@@ -1,44 +1,47 @@
 #!/bin/bash
-# Script to diagnose Arroyo API issues (without web UI checks)
+# Detailed diagnostic script for Arroyo API issues
 
-echo "=== Checking Arroyo Controller Status ==="
+echo "=== Detailed Arroyo Diagnostics ==="
 
-# Check if controller is running
-echo -e "\n1. Checking Docker containers on controller:"
-docker ps | grep arroyo
+echo -e "\n1. Docker container details:"
+docker ps -a | grep arroyo
 
-# Check API endpoints
-echo -e "\n2. Checking Arroyo API endpoints:"
-echo "   - Workers endpoint:"
-curl -s http://localhost:8001/api/v1/workers | jq '.' 2>/dev/null || echo "Workers endpoint failed"
+echo -e "\n2. Port mapping inspection:"
+echo "Container port mappings:"
+docker port arroyo-controller
 
-echo -e "\n   - Pipelines endpoint:"
-curl -s http://localhost:8001/api/v1/pipelines | jq '.' 2>/dev/null || echo "Pipelines endpoint failed"
+echo -e "\n3. Testing API on different ports:"
+echo "   - Testing actual internal port (5114):"
+curl -s http://localhost:5114/api/v1/workers | jq '.' 2>/dev/null || echo "    Failed on port 5114"
 
-# Check controller logs for errors
-echo -e "\n3. Recent controller error logs:"
-docker logs arroyo-controller 2>&1 | grep -i error | tail -5
+echo "   - Testing mapped port (8001 -> 5114):"
+curl -s http://localhost:8001/api/v1/workers | jq '.' 2>/dev/null || echo "    Failed on port 8001"
 
-# Test basic API functionality
-echo -e "\n4. Testing pipeline creation API:"
-# Create a simple test query
-TEST_QUERY=$(cat <<'EOF'
-{
-  "name": "test_pipeline",
-  "query": "CREATE TABLE test (id INT) WITH (connector = 'impulse', event_rate = '10'); SELECT * FROM test;",
-  "parallelism": 1
-}
-EOF
-)
+echo -e "\n4. Container logs (last 30 lines):"
+docker logs arroyo-controller --tail 30
 
-echo "   Sending test query..."
-RESPONSE=$(curl -s -X POST \
-  -H "Content-Type: application/json" \
-  -d "$TEST_QUERY" \
-  http://localhost:8001/api/v1/pipelines)
+echo -e "\n5. Check what's listening inside the container:"
+echo "Processes running in container:"
+docker exec arroyo-controller ps aux | grep -v "ps aux" || echo "Failed to list processes"
 
-echo "   Response: $RESPONSE"
+echo -e "\n6. Environment variables in container:"
+docker exec arroyo-controller env | grep -E "ARROYO|PORT|AWS" | sort
 
-# Check Docker images
-echo -e "\n5. Checking Docker images:"
-docker images | grep arroyo
+echo -e "\n7. Test API from inside the container:"
+docker exec arroyo-controller sh -c "curl -s http://localhost:5114/api/v1/workers || echo 'API not accessible from inside container'"
+
+echo -e "\n8. Network configuration:"
+docker inspect arroyo-controller | jq '.[0].NetworkSettings.Ports'
+
+echo -e "\n9. Check if workers are connected:"
+# Try the internal port since external might not work
+WORKERS=$(docker exec arroyo-controller curl -s http://localhost:5114/api/v1/workers 2>/dev/null)
+if [ ! -z "$WORKERS" ]; then
+    echo "Workers found:"
+    echo "$WORKERS" | jq '.'
+else
+    echo "No workers found or API not accessible"
+fi
+
+echo -e "\n10. Docker images available:"
+docker images | grep -E "arroyo|nexmark"
