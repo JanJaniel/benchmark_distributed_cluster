@@ -144,21 +144,25 @@ cleanup() {
         return
     fi
     CLEANUP_DONE=true
-    
-    log ""
-    log "Stopping benchmark components..."
-    
+
+    echo ""
+    echo "Stopping benchmark components..."
+
     # Stop metrics collector
-    log "Stopping metrics collector..."
-    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop $METRICS_CONTAINER 2>/dev/null || true" >> "$LOG_FILE" 2>&1
-    
-    # Stop nexmark generator  
-    log "Stopping data generator..."
-    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop nexmark-generator 2>/dev/null || true" >> "$LOG_FILE" 2>&1
-    
-    log "Cleanup completed"
-    log "Metrics saved to: $METRICS_FILE"
-    log "Logs saved to: $LOG_FILE"
+    echo "Stopping metrics collector..."
+    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop metrics-collector 2>/dev/null || true" >/dev/null 2>&1
+
+    # Stop nexmark generator
+    echo "Stopping data generator..."
+    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop nexmark-generator 2>/dev/null || true" >/dev/null 2>&1
+
+    echo "✅ Cleanup completed"
+    echo "Metrics saved to: $METRICS_FILE"
+    echo "Logs saved to: $LOG_FILE"
+
+    # Kill background monitoring loop if running
+    jobs -p | xargs -r kill 2>/dev/null
+
     exit 0
 }
 
@@ -262,10 +266,10 @@ log "Monitoring benchmark execution..."
 log "Press Ctrl+C to stop monitoring (benchmark will continue running)"
 log "Comprehensive metrics are being collected in: $METRICS_FILE"
 
-# Function to get pipeline metrics
-get_metrics() {
+# Function to get pipeline job status
+get_job_status() {
     local pipeline_id=$1
-    curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pipeline_id}/metrics"
+    curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pipeline_id}/jobs"
 }
 
 # Function to display comprehensive metrics from collector output
@@ -291,25 +295,19 @@ while true; do
     # Display comprehensive metrics from collector
     display_comprehensive_metrics
     
-    # Display pipeline-specific metrics
-    total_events=0
-    total_rate=0
-    
+    # Display pipeline-specific job status
     for pid in "${PIPELINE_IDS[@]}"; do
-        metrics=$(get_metrics "$pid")
-        if [ ! -z "$metrics" ]; then
-            events=$(echo "$metrics" | jq -r '.events_processed // 0')
-            rate=$(echo "$metrics" | jq -r '.events_per_second // 0')
-            log "Pipeline $pid: $events events, $rate events/sec"
-            total_events=$((total_events + events))
-            total_rate=$(echo "$total_rate + $rate" | bc)
+        job_data=$(get_job_status "$pid")
+        if [ ! -z "$job_data" ]; then
+            # Extract job info (without jq - use grep/sed)
+            job_id=$(echo "$job_data" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+            state=$(echo "$job_data" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+            log "Pipeline $pid: Job $job_id - State: $state"
+        else
+            log "Pipeline $pid: No job data available"
         fi
     done
     
-    if [ ${#PIPELINE_IDS[@]} -gt 1 ]; then
-        log "---"
-        log "Total: $total_events events, $total_rate events/sec"
-    fi
     
     sleep 5
 done
