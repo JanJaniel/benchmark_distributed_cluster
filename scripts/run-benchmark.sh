@@ -71,8 +71,38 @@ log() {
     echo "$@" | tee -a "$LOG_FILE"
 }
 
-# Start logging
-{
+# Cleanup old containers and pipelines before starting
+log "========================================="
+log "Pre-flight Cleanup"
+log "========================================="
+log "Stopping old containers..."
+
+# Stop and remove old containers
+ssh ${CLUSTER_USER}@${CONTROLLER_IP} << 'EOF' 2>&1 | tee -a "$LOG_FILE"
+docker stop metrics-collector 2>/dev/null || true
+docker rm metrics-collector 2>/dev/null || true
+docker stop nexmark-generator 2>/dev/null || true
+docker rm nexmark-generator 2>/dev/null || true
+EOF
+
+log "✅ Old containers cleaned up"
+
+# Delete old pipelines
+log "Cleaning up old pipelines..."
+PIPELINE_COUNT=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -o '"id"' | wc -l)
+if [ "$PIPELINE_COUNT" -gt 0 ]; then
+    log "Found $PIPELINE_COUNT old pipeline(s), deleting..."
+    PIPELINE_IDS=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -oP '"id":"[^"]*"' | cut -d'"' -f4)
+    for pid in $PIPELINE_IDS; do
+        log "  Deleting pipeline: $pid"
+        curl -s -X DELETE "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" >/dev/null
+    done
+    log "✅ Old pipelines deleted"
+else
+    log "✅ No old pipelines to clean up"
+fi
+
+log ""
 log "========================================="
 log "Running Distributed Benchmark"
 log "========================================="
@@ -137,7 +167,7 @@ trap cleanup EXIT INT TERM
 
 # Start data generator
 log "Starting Nexmark data generator..."
-ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | tee -a "$LOG_FILE"
+GENERATOR_CONTAINER_ID=$(ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF
 cd ~/benchmark_distributed_cluster
 docker run -d --rm \
     --name nexmark-generator \
@@ -148,6 +178,16 @@ docker run -d --rm \
     -v \$(pwd)/nexmark-generator-deterministic.py:/app/generator/nexmark-generator-deterministic.py:ro \
     nexmark-generator:latest
 EOF
+)
+
+if [ -n "$GENERATOR_CONTAINER_ID" ]; then
+    log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
+    log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
+else
+    log "❌ Failed to start Nexmark generator"
+    exit 1
+fi
+log ""
 
 # Function to submit a query
 submit_query() {
