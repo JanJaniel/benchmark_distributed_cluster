@@ -82,7 +82,7 @@ services:
 
   # Arroyo Controller
   arroyo-controller:
-    image: arroyo-pi:latest
+    image: ghcr.io/arroyosystems/arroyo:latest
     container_name: arroyo-controller
     restart: unless-stopped
     depends_on:
@@ -104,8 +104,7 @@ services:
       RUST_LOG: info
     volumes:
       - arroyo_data:/arroyo/data
-      - ../../config/arroyo-config.toml:/arroyo/config/arroyo.toml:ro
-    command: ["controller"]
+    command: ["cluster"]
 
 volumes:
   zookeeper_data:
