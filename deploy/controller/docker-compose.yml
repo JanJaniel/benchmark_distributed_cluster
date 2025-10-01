@@ -82,15 +82,15 @@ services:
 
   # Arroyo Controller
   arroyo-controller:
-    image: ghcr.io/arroyosystems/arroyo:latest
+    image: arroyo-pi:latest
     container_name: arroyo-controller
     restart: unless-stopped
     depends_on:
       - minio
     ports:
-      - "8000:5115"  # Web UI
-      - "8001:5114"  # Admin API
-      - "9190:5116"  # Controller API
+      - "8000:8000"  # Web UI
+      - "8001:8001"  # Admin API
+      - "9190:9190"  # Controller API
     environment:
       # Arroyo configuration
       ARROYO__DATABASE__SQLITE__PATH: /arroyo/data/arroyo.db

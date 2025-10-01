@@ -69,5 +69,12 @@ docker exec arroyo-controller cat /etc/hosts | grep -v "^#"
 echo -e "\n16. Test from another container in same network:"
 docker run --rm --network container:arroyo-controller alpine sh -c "apk add -q curl && curl -s http://localhost:5114/api/v1/workers || echo 'Failed from alpine container'"
 
-echo -e "\n17. Docker images available:"
+echo -e "\n17. Check worker logs (last 10 lines from each worker):"
+for i in {1..9}; do
+    echo "Worker $i logs:"
+    ssh picocluster@192.168.2.$((70 + i)) "docker logs arroyo-worker-worker-$i --tail 10 2>&1" || echo "Failed to get logs from worker $i"
+    echo "---"
+done
+
+echo -e "\n18. Docker images available:"
 docker images | grep -E "arroyo|nexmark"
