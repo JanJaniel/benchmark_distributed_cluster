@@ -5,12 +5,12 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Pi1 - Controller Node                          │
-│                            (192.168.2.42)                                │
+│                            (192.168.2.70)                                │
 │                                                                          │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────────┐ │
 │  │   Kafka     │  │    MinIO     │  │  Arroyo    │  │    Nexmark     │ │
 │  │   Broker    │  │  S3 Storage  │  │ Controller │  │   Generator    │ │
-│  │   :9094     │  │    :9000     │  │   :8000    │  │                │ │
+│  │   :9094     │  │    :9000     │  │   :8001    │  │                │ │
 │  └──────┬──────┘  └──────┬───────┘  └─────┬──────┘  └────────┬───────┘ │
 │         │                 │                 │                   │         │
 │         │                 │                 │                   │         │
@@ -27,7 +27,7 @@
     │                   │  │               │  │                   │
 ┌───┴────────────┐  ┌───┴────────────┐  ┌─┴─┴────────────┐  ┌───┴────────────┐
 │  Pi2 - Worker 1│  │  Pi3 - Worker 2│  │ Pi4 - Worker 3 │  │Pi5-10 Workers │
-│ (192.168.2.43) │  │ (192.168.2.44) │  │(192.168.2.45)  │  │(.46-.51)      │
+│ (192.168.2.71) │  │ (192.168.2.72) │  │(192.168.2.73)  │  │(.74-.79)      │
 │                │  │                │  │                │  │               │
 │ ┌─────────────┐│  │ ┌─────────────┐│  │ ┌─────────────┐│  │┌─────────────┐│
 │ │   Arroyo    ││  │ │   Arroyo    ││  │ │   Arroyo    ││  ││   Arroyo    ││
@@ -172,8 +172,15 @@ Workers: 1-4 cores based on query complexity
 
 ## Monitoring Points
 
-1. **Cluster Health**: http://192.168.2.42:8000/health
-2. **Worker Status**: http://192.168.2.42:8000/api/v1/workers
-3. **Pipeline Metrics**: http://192.168.2.42:8000/api/v1/pipelines/{id}/metrics
+1. **API Health**: http://192.168.2.70:8001/health
+2. **Worker Status**: http://192.168.2.70:8001/api/v1/workers
+3. **Pipeline Metrics**: http://192.168.2.70:8001/api/v1/pipelines/{id}/metrics
 4. **Kafka Metrics**: JMX on port 9101
 5. **System Metrics**: Docker stats on each node
+
+## Implementation Notes
+
+- **Controller Image**: Uses custom `arroyo-pi:latest` ARM64 image
+- **Worker Images**: Use `arroyo-pi:latest` ARM64 image
+- **API Port**: 8001 (not 8000) for all API calls
+- **No Web UI**: In distributed mode, only API is available

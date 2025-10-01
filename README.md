@@ -36,15 +36,21 @@ This will:
 - Start all services
 - Create Kafka topics
 
-### 3. Run Benchmark
+### 3. Test Query Submission
 ```bash
-./run-benchmark.sh --events-per-second 50000 --total-events 10000000
+# Test Q1 first
+./scripts/test-q1.sh
+
+# Then run full benchmark
+./run-benchmark.sh --events-per-second 50000 --total-events 10000000 --queries q1
 ```
 
 ### 4. Monitor Performance
 ```bash
-cd ../monitoring
-python collect-metrics.py
+# Check cluster status
+./scripts/check-arroyo-api.sh
+
+# Note: metrics-collector is not yet implemented
 ```
 
 ## Detailed Setup
@@ -68,8 +74,9 @@ sudo usermod -aG docker $USER
 
 ### Service Endpoints
 
-- **Arroyo Web UI**: http://192.168.2.70:8000
-- **MinIO Console**: http://192.168.2.70:9001
+- **Arroyo Web UI**: http://192.168.2.70:8000 (Note: No web UI in distributed mode)
+- **Arroyo API**: http://192.168.2.70:8001
+- **MinIO Console**: http://192.168.2.70:9001 (user/pass: minioadmin/minioadmin)
 - **Kafka Broker**: 192.168.2.70:9094
 
 ## How It Works
@@ -146,7 +153,7 @@ ssh picocluster@192.168.2.71 "cd ~/benchmark_distributed_cluster/deploy/worker &
 
 ### Verify Worker Connection
 ```bash
-curl http://192.168.2.70:8000/api/v1/workers
+curl http://192.168.2.70:8001/api/v1/workers
 ```
 
 ### Common Issues
@@ -154,6 +161,8 @@ curl http://192.168.2.70:8000/api/v1/workers
 1. **Workers not connecting**: Check firewall rules, ensure gRPC port 9190 is accessible
 2. **Out of memory**: Reduce parallelism or events per second
 3. **Kafka connection errors**: Verify Kafka is running and accessible
+4. **API not accessible**: Ensure controller is using `arroyo-pi:latest` image
+5. **Controller crashes**: Check memory limits and use custom ARM64 image
 
 ### Minimal System Impact
 

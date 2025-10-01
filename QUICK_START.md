@@ -2,7 +2,7 @@
 
 ## Schritt 1: Auf Controller (b1pc10) einloggen
 ```bash
-ssh jan@192.168.2.70
+ssh picocluster@192.168.2.70
 cd ~/Bachelorarbeit/benchmark_distributed_cluster
 ```
 
@@ -12,20 +12,20 @@ cd ~/Bachelorarbeit/benchmark_distributed_cluster
 ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
 
 # Auf alle Worker kopieren (Password wird gefragt)
-for i in {71..79}; do ssh-copy-id jan@192.168.2.$i; done
+for i in {71..79}; do ssh-copy-id picocluster@192.168.2.$i; done
 ```
 
 ## Schritt 3: Docker auf allen Pis installieren (einmalig)
 ```bash
 # Auf Controller
 curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker jan
+sudo usermod -aG docker picocluster
 exit
 
 # Neu einloggen und dann auf allen Workern installieren
-ssh jan@192.168.2.70
+ssh picocluster@192.168.2.70
 for i in {71..79}; do
-  ssh jan@192.168.2.$i "curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker jan"
+  ssh picocluster@192.168.2.$i "curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker picocluster"
 done
 ```
 
@@ -33,8 +33,8 @@ done
 ```bash
 # Von Controller aus
 for i in {71..79}; do
-  ssh jan@192.168.2.$i "mkdir -p ~/Bachelorarbeit"
-  scp -r ~/Bachelorarbeit/benchmark_distributed_cluster jan@192.168.2.$i:~/Bachelorarbeit/
+  ssh picocluster@192.168.2.$i "mkdir -p ~/Bachelorarbeit"
+  scp -r ~/Bachelorarbeit/benchmark_distributed_cluster picocluster@192.168.2.$i:~/Bachelorarbeit/
 done
 ```
 
@@ -55,7 +55,7 @@ sleep 30
 cd ~/Bachelorarbeit/benchmark_distributed_cluster
 for i in {1..9}; do
   ip=$((70 + i))
-  ssh jan@192.168.2.$ip "cd ~/Bachelorarbeit/benchmark_distributed_cluster/deploy/worker && NODE_ID=worker-$i WORKER_ID=$i docker compose up -d"
+  ssh picocluster@192.168.2.$ip "cd ~/Bachelorarbeit/benchmark_distributed_cluster/deploy/worker && NODE_ID=worker-$i WORKER_ID=$i docker compose up -d"
 done
 ```
 
@@ -75,7 +75,7 @@ cd ~/Bachelorarbeit/benchmark_distributed_cluster
 docker ps
 
 # Worker Status (z.B. für Worker 1)
-ssh jan@192.168.2.71 "docker ps"
+ssh picocluster@192.168.2.71 "docker ps"
 
 # Arroyo Cluster Status
 curl http://192.168.2.70:8001/api/v1/workers | jq
@@ -88,7 +88,7 @@ cd ~/Bachelorarbeit/benchmark_distributed_cluster/deploy/controller
 docker compose logs -f arroyo-controller
 
 # Worker Logs (z.B. Worker 1)
-ssh jan@192.168.2.71 "docker logs -f arroyo-worker-worker-1"
+ssh picocluster@192.168.2.71 "docker logs -f arroyo-worker-worker-1"
 ```
 
 ## Alles stoppen
