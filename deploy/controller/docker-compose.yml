@@ -88,9 +88,9 @@ services:
     depends_on:
       - minio
     ports:
-      - "8000:8000"  # Web UI
-      - "8001:8001"  # Admin API
-      - "9190:9190"  # Controller API
+      - "8000:5115"  # API (maps to internal Arroyo API port)
+      - "8001:5114"  # Admin API (maps to internal admin port)
+      - "9190:5116"  # gRPC Controller (maps to internal controller port)
     environment:
       # Arroyo configuration
       ARROYO__DATABASE__SQLITE__PATH: /arroyo/data/arroyo.db
