@@ -11,11 +11,8 @@ echo "Container port mappings:"
 docker port arroyo-controller
 
 echo -e "\n3. Testing API on different ports:"
-echo "   - Testing actual internal port (5114):"
-curl -s http://localhost:5114/api/v1/workers | jq '.' 2>/dev/null || echo "    Failed on port 5114"
-
-echo "   - Testing mapped port (8001 -> 5114):"
-curl -s http://localhost:8001/api/v1/workers | jq '.' 2>/dev/null || echo "    Failed on port 8001"
+echo "   - Testing API on port 8000 (maps to internal 5115):"
+curl -s http://localhost:8000/api/v1/workers | jq '.' 2>/dev/null || echo "    Failed on port 8000"
 
 echo -e "\n4. Container logs (last 30 lines):"
 docker logs arroyo-controller --tail 30
@@ -28,14 +25,14 @@ echo -e "\n6. Environment variables in container:"
 docker exec arroyo-controller env | grep -E "ARROYO|PORT|AWS" | sort
 
 echo -e "\n7. Test API from inside the container:"
-docker exec arroyo-controller sh -c "curl -s http://localhost:5114/api/v1/workers || echo 'API not accessible from inside container'"
+docker exec arroyo-controller sh -c "curl -s http://localhost:5115/api/v1/workers || echo 'API not accessible from inside container'"
 
 echo -e "\n8. Network configuration:"
 docker inspect arroyo-controller | jq '.[0].NetworkSettings.Ports'
 
 echo -e "\n9. Check if workers are connected:"
 # Try the internal port since external might not work
-WORKERS=$(docker exec arroyo-controller curl -s http://localhost:5114/api/v1/workers 2>/dev/null)
+WORKERS=$(docker exec arroyo-controller curl -s http://localhost:5115/api/v1/workers 2>/dev/null)
 if [ ! -z "$WORKERS" ]; then
     echo "Workers found:"
     echo "$WORKERS" | jq '.'
