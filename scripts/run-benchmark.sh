@@ -316,48 +316,17 @@ for pid in "${PIPELINE_IDS[@]}"; do
     # Parameters: pipeline_id, output_topic, input_topic, steady_state_wait, sample_duration, num_samples
     log "Running measurement script..."
     log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
+    log ""
 
-    # Test reading the script
-    log "  First 5 lines of script:"
-    head -5 ${SCRIPT_DIR}/metrics/measure-arroyo.sh | while IFS= read -r line; do
-        log "    $line"
-    done
-
-    # Test SSH connectivity
-    log "  Testing SSH to controller..."
-    SSH_TEST=$(ssh -o LogLevel=ERROR -o ConnectTimeout=5 ${CLUSTER_USER}@${CONTROLLER_IP} "echo 'SSH works'" 2>&1)
-    SSH_EXIT=$?
-    log "  SSH test exit code: $SSH_EXIT"
-    log "  SSH test output: $SSH_TEST"
-
-    # Test if we can reach the API
-    log "  Testing API connectivity..."
-    API_TEST=$(curl -s --connect-timeout 5 "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pid}/jobs" 2>&1 | head -c 100)
-    log "  API response (first 100 chars): $API_TEST"
-
-    # Try running the script with bash explicitly and capture everything
+    # Run measurement script in foreground (not background) to prevent container exit
     # Note: Script needs 30s steady state + 10 samples * 10s (parallel measurement) = 130s
     log "  Calling measure-arroyo.sh (this will take ~2-3 minutes)..."
-    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
-    SCRIPT_PID=$!
-    log "  Script running with PID: $SCRIPT_PID, waiting for completion..."
 
-    # Wait for script to complete (no timeout - let it run)
-    wait $SCRIPT_PID 2>/dev/null
+    METRICS_JSON=$(bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 2>&1)
     MEASURE_EXIT_CODE=$?
-    METRICS_JSON=$(cat /tmp/metrics_output.txt 2>/dev/null || echo "")
-    log "  Script completed with exit code: $MEASURE_EXIT_CODE"
+
+    log "  Measurement completed with exit code: $MEASURE_EXIT_CODE"
     log "  Output length: ${#METRICS_JSON} characters"
-
-    # Show first 500 chars of output for debugging
-    if [ ${#METRICS_JSON} -gt 0 ]; then
-        log "  First 500 chars of output:"
-        echo "$METRICS_JSON" | head -c 500 | while IFS= read -r line; do
-            log "    $line"
-        done
-    fi
-
-    log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
 
     if [ $MEASURE_EXIT_CODE -ne 0 ]; then
         log "❌ Measurement script failed"
