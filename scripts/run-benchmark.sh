@@ -6,21 +6,8 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# If not running in Docker, re-run this script inside Docker
-if [ ! -f /.dockerenv ]; then
-    echo "Running benchmark inside Docker container..."
-    # Run as root to avoid permission issues with SSH keys
-    exec docker run --rm -it \
-        --user root \
-        -v "$PROJECT_ROOT":/benchmark \
-        -v "$HOME/.ssh:/root/.ssh:ro" \
-        -e CLUSTER_USER="$USER" \
-        --network host \
-        -w /benchmark \
-        --entrypoint /bin/bash \
-        arroyo-pi:latest \
-        /benchmark/scripts/run-benchmark.sh "$@"
-fi
+# Run directly on host - no need for Docker wrapper
+# The benchmark script orchestrates containers on remote nodes via SSH
 
 source "$SCRIPT_DIR/cluster-env.sh"
 
@@ -312,6 +299,9 @@ for pid in "${PIPELINE_IDS[@]}"; do
     # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
     log "Running measurement script..."
     log "  Parameters: pid=$pid, topic=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
+    log "  Script path: ${SCRIPT_DIR}/metrics/measure-arroyo.sh"
+    log "  Script exists: $(test -f ${SCRIPT_DIR}/metrics/measure-arroyo.sh && echo 'yes' || echo 'no')"
+    log "  Script executable: $(test -x ${SCRIPT_DIR}/metrics/measure-arroyo.sh && echo 'yes' || echo 'no')"
 
     METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
     MEASURE_EXIT_CODE=$?
