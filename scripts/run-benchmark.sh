@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/cluster-env.sh"
 
 # Default values (adjusted for Raspberry Pi cluster capacity)
 EVENTS_PER_SECOND=4000
-TOTAL_EVENTS=500000
+TOTAL_EVENTS=1000000  # Increased to ensure generator runs throughout measurement (30s + 100s = 130s × 4000 = 520k events needed)
 QUERIES="q1,q2,q3,q5,q7,q8"
 PARALLELISM=9
 
