@@ -6,8 +6,21 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Run directly on host - no need for Docker wrapper
-# The benchmark script orchestrates containers on remote nodes via SSH
+# If not running in Docker, re-run this script inside a container with SSH client
+if [ ! -f /.dockerenv ]; then
+    echo "Running benchmark orchestration script..."
+    # Use debian:bullseye-slim which has bash, curl, ssh, jq
+    exec docker run --rm -i \
+        --user root \
+        -v "$PROJECT_ROOT":/benchmark \
+        -v "$HOME/.ssh:/root/.ssh:ro" \
+        -e CLUSTER_USER="$USER" \
+        --network host \
+        -w /benchmark/scripts \
+        --entrypoint /bin/bash \
+        debian:bullseye-slim \
+        -c "apt-get update -qq && apt-get install -y -qq curl jq openssh-client > /dev/null 2>&1 && /benchmark/scripts/run-benchmark.sh \"\$@\"" -- "$@"
+fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
 
