@@ -332,17 +332,26 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  API response (first 100 chars): $API_TEST"
 
     # Try running the script with bash explicitly and capture everything
-    log "  Calling measure-arroyo.sh..."
-    timeout 10 bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
+    # Note: Script needs 30s steady state + 10 samples * 10s = 130s minimum
+    log "  Calling measure-arroyo.sh (this will take ~2-3 minutes)..."
+    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
     SCRIPT_PID=$!
-    log "  Script running with PID: $SCRIPT_PID"
+    log "  Script running with PID: $SCRIPT_PID, waiting for completion..."
 
-    # Wait up to 10 seconds
+    # Wait for script to complete (no timeout - let it run)
     wait $SCRIPT_PID 2>/dev/null
     MEASURE_EXIT_CODE=$?
     METRICS_JSON=$(cat /tmp/metrics_output.txt 2>/dev/null || echo "")
     log "  Script completed with exit code: $MEASURE_EXIT_CODE"
     log "  Output length: ${#METRICS_JSON} characters"
+
+    # Show first 500 chars of output for debugging
+    if [ ${#METRICS_JSON} -gt 0 ]; then
+        log "  First 500 chars of output:"
+        echo "$METRICS_JSON" | head -c 500 | while IFS= read -r line; do
+            log "    $line"
+        done
+    fi
 
     log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
 
