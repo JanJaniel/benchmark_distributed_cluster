@@ -166,8 +166,9 @@ cleanup() {
     exit 0
 }
 
-# Set trap to cleanup on exit
-trap cleanup EXIT INT TERM
+# Set trap to cleanup on exit - use SIGINT for Ctrl+C
+trap 'cleanup; exit 130' INT
+trap 'cleanup' EXIT TERM
 
 # Start data generator
 log "Starting Nexmark data generator..."
@@ -257,59 +258,48 @@ for query in "${QUERY_ARRAY[@]}"; do
     fi
 done
 
-# Give metrics collector time to start
-sleep 2
-
-# Monitor execution
+# Measure throughput for each pipeline
 log ""
-log "Monitoring benchmark execution..."
-log "Press Ctrl+C to stop monitoring (benchmark will continue running)"
-log "Comprehensive metrics are being collected in: $METRICS_FILE"
+log "========================================="
+log "Measuring Throughput"
+log "========================================="
 
-# Function to get pipeline job status
-get_job_status() {
-    local pipeline_id=$1
-    curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pipeline_id}/jobs"
-}
+for pid in "${PIPELINE_IDS[@]}"; do
+    # Determine output topic from query name
+    # For now, hardcoded for q1, will need to be extracted from query
+    OUTPUT_TOPIC="nexmark-q1-results"
 
-# Function to display comprehensive metrics from collector output
-display_comprehensive_metrics() {
-    # Get latest metrics from remote file
-    local latest_metrics=$(ssh ${CLUSTER_USER}@${CONTROLLER_IP} "tail -1 ~/benchmark_distributed_cluster/metrics_${TIMESTAMP}.json 2>/dev/null" | jq -r '. // empty' 2>/dev/null)
-    if [ ! -z "$latest_metrics" ]; then
-        # Extract worker count
-        local worker_count=$(echo "$latest_metrics" | jq -r '.summary.active_workers // 0')
-        log "Active Workers: $worker_count"
-    fi
-}
+    log "Pipeline: $pid"
+    log "Output Topic: $OUTPUT_TOPIC"
 
-# Monitor loop
-start_time=$(date +%s)
-while true; do
-    current_time=$(date +%s)
-    elapsed=$((current_time - start_time))
-    
+    # Run Arroyo metrics measurement
+    METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 2>&1)
+
+    # Extract and display metrics
+    THROUGHPUT=$(echo "$METRICS_JSON" | grep '"throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
+    JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
+    TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+
     log ""
-    log "--- Metrics at ${elapsed}s ---"
-    
-    # Display comprehensive metrics from collector
-    display_comprehensive_metrics
-    
-    # Display pipeline-specific job status
-    for pid in "${PIPELINE_IDS[@]}"; do
-        job_data=$(get_job_status "$pid")
-        if [ ! -z "$job_data" ]; then
-            # Extract job info (without jq - use grep/sed)
-            job_id=$(echo "$job_data" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-            state=$(echo "$job_data" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
-            log "Pipeline $pid: Job $job_id - State: $state"
-        else
-            log "Pipeline $pid: No job data available"
-        fi
-    done
-    
-    
-    sleep 5
+    log "Results:"
+    log "  Job ID: $JOB_ID"
+    log "  Job State: $JOB_STATE"
+    log "  Tasks: $TASKS"
+    log "  Throughput: $THROUGHPUT events/sec"
+    log ""
+    log "Full metrics JSON:"
+    echo "$METRICS_JSON" | grep '^{' | tee -a "$LOG_FILE"
+    log ""
 done
 
-} 2>&1  # End of logging block - this ensures all output is captured
+log "========================================="
+log "Benchmark Complete"
+log "========================================="
+log "Metrics saved to: $METRICS_FILE"
+log "Logs saved to: $LOG_FILE"
+
+# Exit successfully - cleanup will be called by trap
+exit 0
+
+} 2>&1  # End of main logging block
