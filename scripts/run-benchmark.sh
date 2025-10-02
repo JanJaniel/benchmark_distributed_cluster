@@ -10,16 +10,15 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 if [ ! -f /.dockerenv ]; then
     echo "Running benchmark orchestration script..."
     # Use debian:bullseye-slim which has bash, curl, ssh, jq
-    exec docker run --rm -i \
+    exec docker run --rm -it \
         --user root \
         -v "$PROJECT_ROOT":/benchmark \
         -v "$HOME/.ssh:/root/.ssh:ro" \
         -e CLUSTER_USER="$USER" \
         --network host \
         -w /benchmark/scripts \
-        --entrypoint /bin/bash \
         debian:bullseye-slim \
-        -c "apt-get update -qq && apt-get install -y -qq curl jq openssh-client > /dev/null 2>&1 && /benchmark/scripts/run-benchmark.sh \"\$@\"" -- "$@"
+        bash -c "apt-get update -qq && apt-get install -y -qq curl jq openssh-client > /dev/null 2>&1 && exec /benchmark/scripts/run-benchmark.sh \"\$@\"" -- "$@"
 fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
