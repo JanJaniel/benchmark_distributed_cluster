@@ -78,7 +78,7 @@ log "========================================="
 log "Stopping old containers..."
 
 # Stop and remove old containers
-ssh ${CLUSTER_USER}@${CONTROLLER_IP} << 'EOF' 2>&1 | tee -a "$LOG_FILE"
+ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << 'EOF' 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law" | tee -a "$LOG_FILE"
 docker stop metrics-collector 2>/dev/null || true
 docker rm metrics-collector 2>/dev/null || true
 docker stop nexmark-generator 2>/dev/null || true
@@ -116,7 +116,7 @@ log ""
 
 # Start metrics collector in background using Docker
 log "Starting metrics collector..."
-ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | tee -a "$LOG_FILE"
+ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law" | tee -a "$LOG_FILE"
 docker run -d --rm \
     --name metrics-collector \
     --network host \
@@ -172,7 +172,7 @@ trap 'cleanup' EXIT TERM
 
 # Start data generator
 log "Starting Nexmark data generator..."
-GENERATOR_CONTAINER_ID=$(ssh ${CLUSTER_USER}@${CONTROLLER_IP} << EOF
+GENERATOR_CONTAINER_ID=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law"
 cd ~/benchmark_distributed_cluster
 docker run -d --rm \
     --name nexmark-generator \
@@ -230,9 +230,10 @@ submit_query() {
         -H "Content-Type: application/json" \
         -d "$json_payload" \
         "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines")
-    
-    local pipeline_id=$(echo "$response" | jq -r '.id // empty')
-    
+
+    # Export pipeline_id so it's accessible outside the function (not local!)
+    pipeline_id=$(echo "$response" | jq -r '.id // empty')
+
     if [ -z "$pipeline_id" ]; then
         log "❌ Failed to create pipeline for $query_name"
         log "Response: $response"
@@ -241,7 +242,7 @@ submit_query() {
         echo "$response" >> "$LOG_FILE"
         return 1
     fi
-    
+
     log "✅ Pipeline created: $pipeline_id"
     return 0
 }
