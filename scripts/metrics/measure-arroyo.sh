@@ -111,65 +111,53 @@ while ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; do
 done
 echo "✓ Output topic exists" >&2
 
-# Collect throughput samples continuously for the measurement duration
-echo "Collecting samples every ${SAMPLE_INTERVAL}s for ${MEASUREMENT_DURATION}s..." >&2
-OUTPUT_SAMPLES=()
-INPUT_SAMPLES=()
-SAMPLE_TIMESTAMPS=()
+# Simple measurement: sample once over the entire duration
+echo "Measuring throughput over ${MEASUREMENT_DURATION}s..." >&2
 
 MEASUREMENT_START=$(date +%s)
-MEASUREMENT_END=$((MEASUREMENT_START + MEASUREMENT_DURATION))
-SAMPLE_COUNT=0
 
-while [ $(date +%s) -lt $MEASUREMENT_END ]; do
-    SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
-    SAMPLE_START=$(date +%s)
-    REMAINING=$((MEASUREMENT_END - SAMPLE_START))
+# Measure all input topics in parallel
+if [ ${#INPUT_TOPICS[@]} -eq 1 ]; then
+    echo "  Measuring input & output simultaneously..." >&2
+else
+    echo "  Measuring ${#INPUT_TOPICS[@]} input topics & output simultaneously..." >&2
+fi
 
-    echo "  Sample $SAMPLE_COUNT (${REMAINING}s remaining)..." >&2
-
-    # Measure all input topics in parallel
-    if [ ${#INPUT_TOPICS[@]} -eq 1 ]; then
-        echo "    Measuring input & output throughput simultaneously (${SAMPLE_INTERVAL}s)..." >&2
-    else
-        echo "    Measuring ${#INPUT_TOPICS[@]} input topics & output simultaneously (${SAMPLE_INTERVAL}s)..." >&2
-    fi
-
-    # Start measuring all input topics in parallel
-    INPUT_PIDS=()
-    for idx in "${!INPUT_TOPICS[@]}"; do
-        TOPIC="${INPUT_TOPICS[$idx]}"
-        measure_topic_throughput "$KAFKA_BROKER" "$TOPIC" "$SAMPLE_INTERVAL" > /tmp/input_${idx}_$$.txt &
-        INPUT_PIDS+=($!)
-    done
-
-    # Start measuring output topic
-    measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_INTERVAL" > /tmp/output_$$.txt &
-    OUTPUT_PID=$!
-
-    # Wait for all to complete
-    for pid in "${INPUT_PIDS[@]}"; do
-        wait $pid
-    done
-    wait $OUTPUT_PID
-
-    # Sum up all input topics
-    TOTAL_INPUT=0
-    for idx in "${!INPUT_TOPICS[@]}"; do
-        TOPIC_THROUGHPUT=$(cat /tmp/input_${idx}_$$.txt)
-        TOTAL_INPUT=$((TOTAL_INPUT + TOPIC_THROUGHPUT))
-    done
-
-    OUTPUT_THROUGHPUT=$(cat /tmp/output_$$.txt)
-
-    echo "    Input: $TOTAL_INPUT events/sec (total), Output: $OUTPUT_THROUGHPUT events/sec" >&2
-
-    OUTPUT_SAMPLES+=($OUTPUT_THROUGHPUT)
-    INPUT_SAMPLES+=($TOTAL_INPUT)
-    SAMPLE_TIMESTAMPS+=($SAMPLE_START)
+# Start measuring all input topics in parallel
+INPUT_PIDS=()
+for idx in "${!INPUT_TOPICS[@]}"; do
+    TOPIC="${INPUT_TOPICS[$idx]}"
+    measure_topic_throughput "$KAFKA_BROKER" "$TOPIC" "$MEASUREMENT_DURATION" > /tmp/input_${idx}_$$.txt &
+    INPUT_PIDS+=($!)
 done
 
-NUM_SAMPLES=${#OUTPUT_SAMPLES[@]}
+# Start measuring output topic
+measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$MEASUREMENT_DURATION" > /tmp/output_$$.txt &
+OUTPUT_PID=$!
+
+# Wait for all to complete
+for pid in "${INPUT_PIDS[@]}"; do
+    wait $pid
+done
+wait $OUTPUT_PID
+
+# Sum up all input topics
+TOTAL_INPUT=0
+for idx in "${!INPUT_TOPICS[@]}"; do
+    TOPIC_THROUGHPUT=$(cat /tmp/input_${idx}_$$.txt)
+    TOTAL_INPUT=$((TOTAL_INPUT + TOPIC_THROUGHPUT))
+done
+
+OUTPUT_THROUGHPUT=$(cat /tmp/output_$$.txt)
+
+echo "  Input: $TOTAL_INPUT events/sec (average over ${MEASUREMENT_DURATION}s)" >&2
+echo "  Output: $OUTPUT_THROUGHPUT events/sec (average over ${MEASUREMENT_DURATION}s)" >&2
+
+# Store as single sample
+OUTPUT_SAMPLES=($OUTPUT_THROUGHPUT)
+INPUT_SAMPLES=($TOTAL_INPUT)
+SAMPLE_TIMESTAMPS=($MEASUREMENT_START)
+NUM_SAMPLES=1
 
 echo "All samples collected successfully" >&2
 
@@ -247,19 +235,8 @@ cat <<EOF
     "elapsed_time_sec": $ELAPSED_TIME,
     "worker_nodes": $NUM_WORKERS
   },
-  "input_throughput": {
-    "average": $AVG_INPUT,
-    "min": $MIN_INPUT,
-    "max": $MAX_INPUT,
-    "stddev": $STDDEV_INPUT
-  },
-  "output_throughput": {
-    "average": $AVG_OUTPUT,
-    "min": $MIN_OUTPUT,
-    "max": $MAX_OUTPUT,
-    "stddev": $STDDEV_OUTPUT
-  },
-  "samples": $SAMPLES_JSON,
+  "input_throughput_events_per_sec": $AVG_INPUT,
+  "output_throughput_events_per_sec": $AVG_OUTPUT,
   "timestamp": $(date +%s)
 }
 EOF

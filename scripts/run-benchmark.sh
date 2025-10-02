@@ -388,13 +388,13 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     stop_generator
 
     # Extract and display metrics
-    AVG_INPUT=$(echo "$METRICS_JSON" | grep -A 4 '"input_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    AVG_OUTPUT=$(echo "$METRICS_JSON" | grep -A 4 '"output_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    AVG_INPUT=$(echo "$METRICS_JSON" | grep '"input_throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    AVG_OUTPUT=$(echo "$METRICS_JSON" | grep '"output_throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     CORE_SECONDS=$(echo "$METRICS_JSON" | grep -A 3 '"cpu_metrics"' | grep '"core_seconds"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    NUM_SAMPLES=$(echo "$METRICS_JSON" | grep '"num_samples"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    DURATION=$(echo "$METRICS_JSON" | grep '"measurement_duration_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
 
     log "========================================="
     log "Results for Pipeline $pid"
@@ -405,9 +405,9 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log "  Job State: $JOB_STATE"
     log "  Tasks: $TASKS"
     log ""
-    log "Throughput Statistics ($NUM_SAMPLES samples):"
-    log "  Input (measured):  $AVG_INPUT events/sec"
-    log "  Output (measured): $AVG_OUTPUT events/sec"
+    log "Throughput (measured over ${DURATION}s):"
+    log "  Input:  $AVG_INPUT events/sec"
+    log "  Output: $AVG_OUTPUT events/sec"
     log ""
     log "CPU Usage:"
     log "  Core-seconds: $CORE_SECONDS"
@@ -452,8 +452,8 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
     # Add each query result
     for metrics in "${ALL_METRICS[@]}"; do
         QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":\s*"nexmark-\K[^-]+' || echo "unknown")
-        INPUT_AVG=$(echo "$metrics" | jq -r '.input_throughput.average // 0' 2>/dev/null || echo "0")
-        OUTPUT_AVG=$(echo "$metrics" | jq -r '.output_throughput.average // 0' 2>/dev/null || echo "0")
+        INPUT_AVG=$(echo "$metrics" | jq -r '.input_throughput_events_per_sec // 0' 2>/dev/null || echo "0")
+        OUTPUT_AVG=$(echo "$metrics" | jq -r '.output_throughput_events_per_sec // 0' 2>/dev/null || echo "0")
         CORE_SEC=$(echo "$metrics" | jq -r '.cpu_metrics.core_seconds // 0' 2>/dev/null || echo "0")
 
         printf "%-10s %-20s %-20s %-15s\n" "$QUERY_NAME" "$INPUT_AVG events/sec" "$OUTPUT_AVG events/sec" "$CORE_SEC core-sec"
