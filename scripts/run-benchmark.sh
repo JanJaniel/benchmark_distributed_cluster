@@ -98,10 +98,13 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
         JOB_ID=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
         if [ -n "$JOB_ID" ]; then
             log "  Stopping job $JOB_ID for pipeline: $pid"
-            STOP_RESPONSE=$(curl -s -X POST "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs/$JOB_ID/stop" \
-                -H "Content-Type: application/json")
+            # Use pipeline-level stop endpoint (correct Arroyo API)
+            STOP_RESPONSE=$(curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" \
+                -H "Content-Type: application/json" \
+                -d '{"stop": "immediate"}')
+            # Show response if there's an error
             if echo "$STOP_RESPONSE" | grep -qi "error"; then
-                log "    Stop response: $STOP_RESPONSE"
+                log "    ⚠ Stop response: $STOP_RESPONSE"
             fi
 
             # Wait for job to reach terminal state
@@ -318,12 +321,10 @@ for pid in "${PIPELINE_IDS[@]}"; do
 
     # Stop the pipeline after measurement
     log "Stopping pipeline $pid..."
-    JOB_ID=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [ -n "$JOB_ID" ]; then
-        curl -s -X POST "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs/$JOB_ID/stop" \
-            -H "Content-Type: application/json" >/dev/null
-        log "✅ Pipeline stopped"
-    fi
+    curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" \
+        -H "Content-Type: application/json" \
+        -d '{"stop": "immediate"}' >/dev/null
+    log "✅ Pipeline stop requested"
 
     # Extract and display metrics
     AVG_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
