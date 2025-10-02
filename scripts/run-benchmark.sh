@@ -206,9 +206,10 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup' TERM
 # Note: No EXIT trap - cleanup is called explicitly at end of script
 
-# Start data generator
-log "Starting Nexmark data generator..."
-GENERATOR_CONTAINER_ID=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law"
+# Function to start data generator
+start_generator() {
+    log "Starting Nexmark data generator..."
+    GENERATOR_CONTAINER_ID=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law"
 cd ~/benchmark_distributed_cluster
 docker run -d --rm \
     --name nexmark-generator \
@@ -221,14 +222,22 @@ docker run -d --rm \
 EOF
 )
 
-if [ -n "$GENERATOR_CONTAINER_ID" ]; then
-    log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
-    log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
-else
-    log "❌ Failed to start Nexmark generator"
-    exit 1
-fi
-log ""
+    if [ -n "$GENERATOR_CONTAINER_ID" ]; then
+        log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
+        log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
+        return 0
+    else
+        log "❌ Failed to start Nexmark generator"
+        return 1
+    fi
+}
+
+# Function to stop data generator
+stop_generator() {
+    log "Stopping data generator..."
+    ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker stop nexmark-generator 2>/dev/null || true" >/dev/null 2>&1
+    log "✅ Generator stopped"
+}
 
 # Function to submit a query
 submit_query() {
@@ -283,23 +292,13 @@ submit_query() {
     return 0
 }
 
-# Submit all queries
+# Process queries one at a time: submit → measure → stop → next
 log ""
-log "Submitting queries..."
+log "========================================="
+log "Running Queries Sequentially"
+log "========================================="
+
 IFS=',' read -ra QUERY_ARRAY <<< "$QUERIES"
-PIPELINE_IDS=()
-
-for query in "${QUERY_ARRAY[@]}"; do
-    if submit_query "$query"; then
-        PIPELINE_IDS+=("$pipeline_id")
-    fi
-done
-
-# Measure throughput for each pipeline
-log ""
-log "========================================="
-log "Measuring Throughput"
-log "========================================="
 
 # Array to store all metrics for summary
 ALL_METRICS=()
@@ -314,19 +313,34 @@ QUERY_INPUT_TOPICS["q5"]="nexmark-bid"
 QUERY_INPUT_TOPICS["q7"]="nexmark-bid"
 QUERY_INPUT_TOPICS["q8"]="nexmark-person"  # Joins person and auction
 
-# Track which query each pipeline belongs to
-QUERY_INDEX=0
+for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
+    log ""
+    log "========================================="
+    log "Query: $QUERY_NAME"
+    log "========================================="
 
-for pid in "${PIPELINE_IDS[@]}"; do
-    # Get the query name for this pipeline
-    QUERY_NAME="${QUERY_ARRAY[$QUERY_INDEX]}"
-    QUERY_INDEX=$((QUERY_INDEX + 1))
+    # Start generator for this query
+    if ! start_generator; then
+        log "⚠ Skipping query $QUERY_NAME due to generator failure"
+        continue
+    fi
+    log ""
+
+    # Submit query
+    log "Submitting query: $QUERY_NAME"
+    if ! submit_query "$QUERY_NAME"; then
+        log "⚠ Skipping query $QUERY_NAME due to submission failure"
+        stop_generator
+        continue
+    fi
+
+    pid="$pipeline_id"
 
     # Determine input and output topics based on query
     OUTPUT_TOPIC="nexmark-${QUERY_NAME}-results"
     INPUT_TOPIC="${QUERY_INPUT_TOPICS[$QUERY_NAME]}"
 
-    log "Pipeline: $pid (Query: $QUERY_NAME)"
+    log "Pipeline: $pid"
     log "Input Topic: $INPUT_TOPIC"
     log "Output Topic: $OUTPUT_TOPIC"
     log ""
@@ -368,6 +382,9 @@ for pid in "${PIPELINE_IDS[@]}"; do
         -H "Content-Type: application/json" \
         -d '{"stop": "immediate"}' >/dev/null
     log "✅ Pipeline stop requested"
+
+    # Stop generator after measurement
+    stop_generator
 
     # Extract and display metrics
     AVG_INPUT=$(echo "$METRICS_JSON" | grep -A 4 '"input_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
