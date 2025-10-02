@@ -222,6 +222,19 @@ EOF
 if [ -n "$GENERATOR_CONTAINER_ID" ]; then
     log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
     log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
+
+    # Start background monitoring of generator
+    (
+        sleep 5  # Wait for generator to start
+        while docker ps | grep -q nexmark-generator 2>/dev/null; do
+            LAST_LINE=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker logs nexmark-generator 2>&1 | tail -1" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi")
+            if echo "$LAST_LINE" | grep -q "events/sec"; then
+                echo "[Generator] $LAST_LINE" | tee -a "$LOG_FILE"
+            fi
+            sleep 10
+        done
+    ) &
+    MONITOR_PID=$!
 else
     log "❌ Failed to start Nexmark generator"
     exit 1
@@ -418,19 +431,28 @@ log "========================================="
 SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).json"
 
 # Build summary with query results
-cat > "$SUMMARY_FILE" <<EOF
 {
-  "benchmark_info": {
-    "timestamp": "$(date -Iseconds)",
-    "events_per_second": $EVENTS_PER_SECOND,
-    "total_events": $TOTAL_EVENTS,
-    "parallelism": $PARALLELISM
-  },
-  "queries": [
-$(IFS=,; echo "${ALL_METRICS[*]}")
-  ]
-}
-EOF
+    echo "{"
+    echo "  \"benchmark_info\": {"
+    echo "    \"timestamp\": \"$(date -Iseconds)\","
+    echo "    \"events_per_second\": $EVENTS_PER_SECOND,"
+    echo "    \"total_events\": $TOTAL_EVENTS,"
+    echo "    \"parallelism\": $PARALLELISM"
+    echo "  },"
+    echo "  \"queries\": ["
+
+    # Add each query result
+    for i in "${!ALL_METRICS[@]}"; do
+        echo "    ${ALL_METRICS[$i]}"
+        # Add comma if not last element
+        if [ $i -lt $((${#ALL_METRICS[@]} - 1)) ]; then
+            echo ","
+        fi
+    done
+
+    echo "  ]"
+    echo "}"
+} > "$SUMMARY_FILE"
 
 log "Summary saved to: $SUMMARY_FILE"
 log "Logs saved to: $LOG_FILE"
