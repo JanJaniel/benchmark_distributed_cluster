@@ -299,6 +299,9 @@ log "========================================="
 log "Measuring Throughput"
 log "========================================="
 
+# Array to store all metrics for summary
+ALL_METRICS=()
+
 for pid in "${PIPELINE_IDS[@]}"; do
     # Determine output topic from query name
     # For now, hardcoded for q1, will need to be extracted from query
@@ -398,14 +401,38 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  Std Dev: ±$STDDEV events/sec"
     log ""
     log "Full metrics JSON:"
-    echo "$METRICS_JSON" | grep '^{' | tee -a "$LOG_FILE"
+    PIPELINE_METRICS=$(echo "$METRICS_JSON" | grep '^{')
+    echo "$PIPELINE_METRICS" | tee -a "$LOG_FILE"
+
+    # Store metrics for summary
+    ALL_METRICS+=("$PIPELINE_METRICS")
+
     log ""
 done
 
 log "========================================="
 log "Benchmark Complete"
 log "========================================="
-log "Metrics saved to: $METRICS_FILE"
+
+# Create summary results file
+SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).json"
+
+# Build summary with query results
+cat > "$SUMMARY_FILE" <<EOF
+{
+  "benchmark_info": {
+    "timestamp": "$(date -Iseconds)",
+    "events_per_second": $EVENTS_PER_SECOND,
+    "total_events": $TOTAL_EVENTS,
+    "parallelism": $PARALLELISM
+  },
+  "queries": [
+$(IFS=,; echo "${ALL_METRICS[*]}")
+  ]
+}
+EOF
+
+log "Summary saved to: $SUMMARY_FILE"
 log "Logs saved to: $LOG_FILE"
 
 # Exit successfully - cleanup will be called by trap
