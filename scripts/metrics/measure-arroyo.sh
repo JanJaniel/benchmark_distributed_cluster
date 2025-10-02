@@ -85,13 +85,22 @@ for i in $(seq 1 $NUM_SAMPLES); do
     echo "  Sample $i/$NUM_SAMPLES..." >&2
 
     SAMPLE_START=$(date +%s)
-    echo "    Measuring input throughput (${SAMPLE_DURATION}s)..." >&2
-    INPUT_THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$INPUT_TOPIC" "$SAMPLE_DURATION")
-    echo "    Input: $INPUT_THROUGHPUT events/sec" >&2
+    echo "    Measuring input & output throughput simultaneously (${SAMPLE_DURATION}s)..." >&2
 
-    echo "    Measuring output throughput (${SAMPLE_DURATION}s)..." >&2
-    OUTPUT_THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
-    echo "    Output: $OUTPUT_THROUGHPUT events/sec" >&2
+    # Measure both topics in parallel using temp files
+    measure_topic_throughput "$KAFKA_BROKER" "$INPUT_TOPIC" "$SAMPLE_DURATION" > /tmp/input_$$.txt &
+    INPUT_PID=$!
+    measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION" > /tmp/output_$$.txt &
+    OUTPUT_PID=$!
+
+    # Wait for both to complete
+    wait $INPUT_PID
+    wait $OUTPUT_PID
+
+    INPUT_THROUGHPUT=$(cat /tmp/input_$$.txt)
+    OUTPUT_THROUGHPUT=$(cat /tmp/output_$$.txt)
+
+    echo "    Input: $INPUT_THROUGHPUT events/sec, Output: $OUTPUT_THROUGHPUT events/sec" >&2
 
     OUTPUT_SAMPLES+=($OUTPUT_THROUGHPUT)
     INPUT_SAMPLES+=($INPUT_THROUGHPUT)

@@ -336,8 +336,8 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  API response (first 100 chars): $API_TEST"
 
     # Try running the script with bash explicitly and capture everything
-    # Note: Script needs 30s steady state + 10 samples * 20s (input+output) = 230s minimum
-    log "  Calling measure-arroyo.sh (this will take ~4-5 minutes)..."
+    # Note: Script needs 30s steady state + 10 samples * 10s (parallel measurement) = 130s
+    log "  Calling measure-arroyo.sh (this will take ~2-3 minutes)..."
     bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
     SCRIPT_PID=$!
     log "  Script running with PID: $SCRIPT_PID, waiting for completion..."
