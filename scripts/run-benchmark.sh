@@ -313,9 +313,9 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log ""
 
     # Run Arroyo metrics measurement with multiple samples
-    # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
+    # Parameters: pipeline_id, output_topic, input_topic, steady_state_wait, sample_duration, num_samples
     log "Running measurement script..."
-    log "  Parameters: pid=$pid, topic=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
+    log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
 
     # Test reading the script
     log "  First 5 lines of script:"
@@ -336,9 +336,9 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  API response (first 100 chars): $API_TEST"
 
     # Try running the script with bash explicitly and capture everything
-    # Note: Script needs 30s steady state + 10 samples * 10s = 130s minimum
-    log "  Calling measure-arroyo.sh (this will take ~2-3 minutes)..."
-    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
+    # Note: Script needs 30s steady state + 10 samples * 20s (input+output) = 230s minimum
+    log "  Calling measure-arroyo.sh (this will take ~4-5 minutes)..."
+    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
     SCRIPT_PID=$!
     log "  Script running with PID: $SCRIPT_PID, waiting for completion..."
 
@@ -377,10 +377,8 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "✅ Pipeline stop requested"
 
     # Extract and display metrics
-    AVG_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    MIN_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"min"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    MAX_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"max"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    STDDEV=$(echo "$METRICS_JSON" | grep '"stddev"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    AVG_INPUT=$(echo "$METRICS_JSON" | grep -A 4 '"input_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    AVG_OUTPUT=$(echo "$METRICS_JSON" | grep -A 4 '"output_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
@@ -396,10 +394,8 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  Tasks: $TASKS"
     log ""
     log "Throughput Statistics ($NUM_SAMPLES samples):"
-    log "  Average: $AVG_THROUGHPUT events/sec"
-    log "  Minimum: $MIN_THROUGHPUT events/sec"
-    log "  Maximum: $MAX_THROUGHPUT events/sec"
-    log "  Std Dev: ±$STDDEV events/sec"
+    log "  Input (measured):  $AVG_INPUT events/sec"
+    log "  Output (measured): $AVG_OUTPUT events/sec"
     log ""
     log "Full metrics JSON:"
     PIPELINE_METRICS=$(echo "$METRICS_JSON" | grep '^{')
@@ -440,13 +436,10 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
     # Add each query result
     for metrics in "${ALL_METRICS[@]}"; do
         QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":"nexmark-\K[^-]+' || echo "unknown")
-        AVG=$(echo "$metrics" | grep -oP '"average":\K[0-9]+' || echo "0")
+        INPUT_AVG=$(echo "$metrics" | grep -A 4 '"input_throughput"' | grep -oP '"average":\K[0-9]+' || echo "0")
+        OUTPUT_AVG=$(echo "$metrics" | grep -A 4 '"output_throughput"' | grep -oP '"average":\K[0-9]+' || echo "0")
 
-        # Calculate actual input rate from generator (bid events only for q1)
-        # Total generated: $EVENTS_PER_SECOND, Bids: 92% = 46,000/sec
-        INPUT_RATE=$EVENTS_PER_SECOND
-
-        printf "%-15s %-30s %-30s\n" "$QUERY_NAME" "$INPUT_RATE events/sec" "$AVG events/sec"
+        printf "%-15s %-30s %-30s\n" "$QUERY_NAME" "$INPUT_AVG events/sec" "$OUTPUT_AVG events/sec"
     done
 
     echo ""

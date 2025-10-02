@@ -75,33 +75,44 @@ while ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; do
 done
 echo "✓ Output topic exists" >&2
 
-# Collect multiple throughput samples
+# Collect multiple throughput samples for both input and output
 echo "Collecting $NUM_SAMPLES samples (${SAMPLE_DURATION}s each)..." >&2
-SAMPLES=()
+OUTPUT_SAMPLES=()
+INPUT_SAMPLES=()
 SAMPLE_TIMESTAMPS=()
 
 for i in $(seq 1 $NUM_SAMPLES); do
     echo "  Sample $i/$NUM_SAMPLES..." >&2
 
     SAMPLE_START=$(date +%s)
-    echo "    Measuring throughput (${SAMPLE_DURATION}s)..." >&2
-    THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
-    echo "    Measurement complete" >&2
+    echo "    Measuring input throughput (${SAMPLE_DURATION}s)..." >&2
+    INPUT_THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$INPUT_TOPIC" "$SAMPLE_DURATION")
+    echo "    Input: $INPUT_THROUGHPUT events/sec" >&2
 
-    SAMPLES+=($THROUGHPUT)
+    echo "    Measuring output throughput (${SAMPLE_DURATION}s)..." >&2
+    OUTPUT_THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
+    echo "    Output: $OUTPUT_THROUGHPUT events/sec" >&2
+
+    OUTPUT_SAMPLES+=($OUTPUT_THROUGHPUT)
+    INPUT_SAMPLES+=($INPUT_THROUGHPUT)
     SAMPLE_TIMESTAMPS+=($SAMPLE_START)
-
-    echo "    → $THROUGHPUT events/sec" >&2
 done
 
 echo "All samples collected successfully" >&2
 
-# Calculate statistics
-SAMPLES_STR="${SAMPLES[*]}"
-AVG_THROUGHPUT=$(calculate_average "$SAMPLES_STR")
-MIN_THROUGHPUT=$(calculate_min "$SAMPLES_STR")
-MAX_THROUGHPUT=$(calculate_max "$SAMPLES_STR")
-STDDEV_THROUGHPUT=$(calculate_stddev "$SAMPLES_STR" "$AVG_THROUGHPUT")
+# Calculate statistics for output
+OUTPUT_SAMPLES_STR="${OUTPUT_SAMPLES[*]}"
+AVG_OUTPUT=$(calculate_average "$OUTPUT_SAMPLES_STR")
+MIN_OUTPUT=$(calculate_min "$OUTPUT_SAMPLES_STR")
+MAX_OUTPUT=$(calculate_max "$OUTPUT_SAMPLES_STR")
+STDDEV_OUTPUT=$(calculate_stddev "$OUTPUT_SAMPLES_STR" "$AVG_OUTPUT")
+
+# Calculate statistics for input
+INPUT_SAMPLES_STR="${INPUT_SAMPLES[*]}"
+AVG_INPUT=$(calculate_average "$INPUT_SAMPLES_STR")
+MIN_INPUT=$(calculate_min "$INPUT_SAMPLES_STR")
+MAX_INPUT=$(calculate_max "$INPUT_SAMPLES_STR")
+STDDEV_INPUT=$(calculate_stddev "$INPUT_SAMPLES_STR" "$AVG_INPUT")
 
 # Get additional job metrics
 JOB_DATA=$(get_job_status)
@@ -110,11 +121,11 @@ TASKS=$(echo "$JOB_DATA" | sed -n 's/.*"tasks":\([0-9]*\).*/\1/p' | head -1)
 
 # Format samples array for JSON
 SAMPLES_JSON="["
-for i in "${!SAMPLES[@]}"; do
+for i in "${!OUTPUT_SAMPLES[@]}"; do
     if [ $i -gt 0 ]; then
         SAMPLES_JSON+=","
     fi
-    SAMPLES_JSON+="{\"sample_num\":$((i+1)),\"throughput\":${SAMPLES[$i]},\"timestamp\":${SAMPLE_TIMESTAMPS[$i]}}"
+    SAMPLES_JSON+="{\"sample_num\":$((i+1)),\"input\":${INPUT_SAMPLES[$i]},\"output\":${OUTPUT_SAMPLES[$i]},\"timestamp\":${SAMPLE_TIMESTAMPS[$i]}}"
 done
 SAMPLES_JSON+="]"
 
@@ -125,15 +136,22 @@ cat <<EOF
   "job_id": "$JOB_ID",
   "job_state": "$JOB_STATE",
   "tasks": $TASKS,
+  "input_topic": "$INPUT_TOPIC",
   "output_topic": "$OUTPUT_TOPIC",
   "sample_duration_sec": $SAMPLE_DURATION,
   "num_samples": $NUM_SAMPLES,
   "total_measurement_time_sec": $((SAMPLE_DURATION * NUM_SAMPLES)),
-  "throughput": {
-    "average": $AVG_THROUGHPUT,
-    "min": $MIN_THROUGHPUT,
-    "max": $MAX_THROUGHPUT,
-    "stddev": $STDDEV_THROUGHPUT
+  "input_throughput": {
+    "average": $AVG_INPUT,
+    "min": $MIN_INPUT,
+    "max": $MAX_INPUT,
+    "stddev": $STDDEV_INPUT
+  },
+  "output_throughput": {
+    "average": $AVG_OUTPUT,
+    "min": $MIN_OUTPUT,
+    "max": $MAX_OUTPUT,
+    "stddev": $STDDEV_OUTPUT
   },
   "samples": $SAMPLES_JSON,
   "timestamp": $(date +%s)
