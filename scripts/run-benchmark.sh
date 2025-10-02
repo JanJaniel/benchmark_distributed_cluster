@@ -319,16 +319,29 @@ for pid in "${PIPELINE_IDS[@]}"; do
         log "    $line"
     done
 
-    # Direct inline test
-    log "  Testing inline script call..."
-    TEST_SCRIPT_OUTPUT=$(bash -c "echo 'Args: $pid $OUTPUT_TOPIC'; exit 0" 2>&1)
-    log "  Inline test result: $TEST_SCRIPT_OUTPUT"
+    # Test SSH connectivity
+    log "  Testing SSH to controller..."
+    SSH_TEST=$(ssh -o LogLevel=ERROR -o ConnectTimeout=5 ${CLUSTER_USER}@${CONTROLLER_IP} "echo 'SSH works'" 2>&1)
+    SSH_EXIT=$?
+    log "  SSH test exit code: $SSH_EXIT"
+    log "  SSH test output: $SSH_TEST"
+
+    # Test if we can reach the API
+    log "  Testing API connectivity..."
+    API_TEST=$(curl -s --connect-timeout 5 "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/${pid}/jobs" 2>&1 | head -c 100)
+    log "  API response (first 100 chars): $API_TEST"
 
     # Try running the script with bash explicitly and capture everything
     log "  Calling measure-arroyo.sh..."
-    METRICS_JSON=$(bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
+    timeout 10 bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1 &
+    SCRIPT_PID=$!
+    log "  Script running with PID: $SCRIPT_PID"
+
+    # Wait up to 10 seconds
+    wait $SCRIPT_PID 2>/dev/null
     MEASURE_EXIT_CODE=$?
-    log "  Script returned with exit code: $MEASURE_EXIT_CODE"
+    METRICS_JSON=$(cat /tmp/metrics_output.txt 2>/dev/null || echo "")
+    log "  Script completed with exit code: $MEASURE_EXIT_CODE"
     log "  Output length: ${#METRICS_JSON} characters"
 
     log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
