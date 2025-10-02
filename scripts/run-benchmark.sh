@@ -313,10 +313,14 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "Running measurement script..."
     log "  Parameters: pid=$pid, topic=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
     log "  Script path: ${SCRIPT_DIR}/metrics/measure-arroyo.sh"
-    log "  Script exists: $(test -f ${SCRIPT_DIR}/metrics/measure-arroyo.sh && echo 'yes' || echo 'no')"
-    log "  Script executable: $(test -x ${SCRIPT_DIR}/metrics/measure-arroyo.sh && echo 'yes' || echo 'no')"
+    log "  Testing basic execution..."
 
-    METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
+    # Test if script can run at all
+    TEST_OUTPUT=$(bash -c 'echo "TEST FROM BASH"' 2>&1)
+    log "  Bash test: $TEST_OUTPUT"
+
+    # Try running the script with bash explicitly
+    METRICS_JSON=$(bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
     MEASURE_EXIT_CODE=$?
 
     log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
