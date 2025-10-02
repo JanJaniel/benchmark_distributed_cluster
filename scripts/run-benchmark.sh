@@ -321,25 +321,20 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
     log ""
 
-    # Run measurement script in foreground (not background) to prevent container exit
+    # Run measurement script - let output stream to terminal in real-time
     # Note: Script needs 30s steady state + 10 samples * 10s (parallel measurement) = 130s
-    log "  Calling measure-arroyo.sh (this will take ~2-3 minutes)..."
-    log "  Command: bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh $pid $OUTPUT_TOPIC $INPUT_TOPIC 30 10 10"
+    log ""
+    log "Starting measurement (this will take ~2-3 minutes)..."
+    log "========================================"
 
-    # Run the script and capture output
-    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 > /tmp/metrics_output.txt 2>&1
-    MEASURE_EXIT_CODE=$?
+    # Run the script, showing output in real-time
+    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 2>&1 | tee /tmp/metrics_output.txt
+    MEASURE_EXIT_CODE=${PIPESTATUS[0]}
+
+    log "========================================"
+    log "Measurement completed with exit code: $MEASURE_EXIT_CODE"
 
     METRICS_JSON=$(cat /tmp/metrics_output.txt)
-
-    log "  Measurement completed with exit code: $MEASURE_EXIT_CODE"
-    log "  Output length: ${#METRICS_JSON} characters"
-
-    # Show first few lines for debugging
-    log "  First 10 lines of output:"
-    head -10 /tmp/metrics_output.txt | while IFS= read -r line; do
-        log "    $line"
-    done
 
     if [ $MEASURE_EXIT_CODE -ne 0 ]; then
         log "❌ Measurement script failed"
