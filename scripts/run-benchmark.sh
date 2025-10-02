@@ -27,7 +27,7 @@ source "$SCRIPT_DIR/cluster-env.sh"
 
 # Default values (adjusted for Raspberry Pi cluster capacity and windowing queries)
 EVENTS_PER_SECOND=10000
-TOTAL_EVENTS=5000000  # High enough for windowing queries to have sufficient data (30s + 100s = 130s × 10000 = 1.3M events needed per query)
+TOTAL_EVENTS=10000000  # High enough even with slow measurements (500s × 10000 = 5M events per query, using 10M for safety)
 QUERIES="q1,q2,q3,q4,q5,q7,q8"
 PARALLELISM=9
 
@@ -345,20 +345,20 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log "Output Topic: $OUTPUT_TOPIC"
     log ""
 
-    # Run Arroyo metrics measurement with multiple samples
-    # Parameters: pipeline_id, output_topic, input_topic, steady_state_wait, sample_duration, num_samples
+    # Run Arroyo metrics measurement with time-based sampling
+    # Parameters: pipeline_id, output_topic, input_topics, steady_state_wait, sample_interval, measurement_duration
     log "Running measurement script..."
-    log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
+    log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, interval=10s, duration=120s"
     log ""
 
     # Run measurement script - let output stream to terminal in real-time
-    # Note: Script needs 30s steady state + 10 samples * 10s (parallel measurement) = 130s
+    # Note: Script needs 30s steady state + 120s measurement = 150s total
     log ""
-    log "Starting measurement (this will take ~2-3 minutes)..."
+    log "Starting measurement (this will take ~3 minutes)..."
     log "========================================"
 
     # Run the script, showing output in real-time
-    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 10 2>&1 | tee /tmp/metrics_output.txt
+    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 120 2>&1 | tee /tmp/metrics_output.txt
     MEASURE_EXIT_CODE=${PIPESTATUS[0]}
 
     log "========================================"

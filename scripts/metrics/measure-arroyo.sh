@@ -16,19 +16,19 @@ echo "  PIPELINE_ID: $1" >&2
 echo "  OUTPUT_TOPIC: $2" >&2
 echo "  INPUT_TOPICS: $3" >&2
 echo "  STEADY_STATE_WAIT: $4" >&2
-echo "  SAMPLE_DURATION: $5" >&2
-echo "  NUM_SAMPLES: $6" >&2
+echo "  SAMPLE_INTERVAL: $5" >&2
+echo "  MEASUREMENT_DURATION: $6" >&2
 
-# Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_duration] [num_samples]
+# Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_interval] [measurement_duration]
 PIPELINE_ID=$1
 OUTPUT_TOPIC=$2
 INPUT_TOPICS_CSV=$3  # Can be single topic or comma-separated list
-STEADY_STATE_WAIT=${4:-30}  # Default: wait 30s for steady state
-SAMPLE_DURATION=${5:-10}     # Default: sample for 10s each
-NUM_SAMPLES=${6:-10}         # Default: collect 10 samples
+STEADY_STATE_WAIT=${4:-30}      # Default: wait 30s for steady state
+SAMPLE_INTERVAL=${5:-10}        # Default: sample every 10s
+MEASUREMENT_DURATION=${6:-120}  # Default: measure for 120s total
 
 if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ] || [ -z "$INPUT_TOPICS_CSV" ]; then
-    echo "Usage: $0 <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_duration] [num_samples]"
+    echo "Usage: $0 <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_interval] [measurement_duration]"
     exit 1
 fi
 
@@ -84,7 +84,8 @@ fi
 echo "Capturing initial CPU metrics..." >&2
 START_TIME=$(date +%s)
 TOTAL_CPU_START=0
-for WORKER_IP in $(echo "${WORKER_IPS[@]}"); do
+for i in $(seq 1 $NUM_WORKERS); do
+    WORKER_IP=$(get_worker_ip $i)
     # Get CPU time in seconds from /proc/stat (sum of user + system time across all cores)
     CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
     TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_TIME}")
@@ -108,34 +109,40 @@ while ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; do
 done
 echo "✓ Output topic exists" >&2
 
-# Collect multiple throughput samples for both input and output
-echo "Collecting $NUM_SAMPLES samples (${SAMPLE_DURATION}s each)..." >&2
+# Collect throughput samples continuously for the measurement duration
+echo "Collecting samples every ${SAMPLE_INTERVAL}s for ${MEASUREMENT_DURATION}s..." >&2
 OUTPUT_SAMPLES=()
 INPUT_SAMPLES=()
 SAMPLE_TIMESTAMPS=()
 
-for i in $(seq 1 $NUM_SAMPLES); do
-    echo "  Sample $i/$NUM_SAMPLES..." >&2
+MEASUREMENT_START=$(date +%s)
+MEASUREMENT_END=$((MEASUREMENT_START + MEASUREMENT_DURATION))
+SAMPLE_COUNT=0
 
+while [ $(date +%s) -lt $MEASUREMENT_END ]; do
+    SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
     SAMPLE_START=$(date +%s)
+    REMAINING=$((MEASUREMENT_END - SAMPLE_START))
+
+    echo "  Sample $SAMPLE_COUNT (${REMAINING}s remaining)..." >&2
 
     # Measure all input topics in parallel
     if [ ${#INPUT_TOPICS[@]} -eq 1 ]; then
-        echo "    Measuring input & output throughput simultaneously (${SAMPLE_DURATION}s)..." >&2
+        echo "    Measuring input & output throughput simultaneously (${SAMPLE_INTERVAL}s)..." >&2
     else
-        echo "    Measuring ${#INPUT_TOPICS[@]} input topics & output simultaneously (${SAMPLE_DURATION}s)..." >&2
+        echo "    Measuring ${#INPUT_TOPICS[@]} input topics & output simultaneously (${SAMPLE_INTERVAL}s)..." >&2
     fi
 
     # Start measuring all input topics in parallel
     INPUT_PIDS=()
     for idx in "${!INPUT_TOPICS[@]}"; do
         TOPIC="${INPUT_TOPICS[$idx]}"
-        measure_topic_throughput "$KAFKA_BROKER" "$TOPIC" "$SAMPLE_DURATION" > /tmp/input_${idx}_$$.txt &
+        measure_topic_throughput "$KAFKA_BROKER" "$TOPIC" "$SAMPLE_INTERVAL" > /tmp/input_${idx}_$$.txt &
         INPUT_PIDS+=($!)
     done
 
     # Start measuring output topic
-    measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION" > /tmp/output_$$.txt &
+    measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_INTERVAL" > /tmp/output_$$.txt &
     OUTPUT_PID=$!
 
     # Wait for all to complete
@@ -160,13 +167,16 @@ for i in $(seq 1 $NUM_SAMPLES); do
     SAMPLE_TIMESTAMPS+=($SAMPLE_START)
 done
 
+NUM_SAMPLES=${#OUTPUT_SAMPLES[@]}
+
 echo "All samples collected successfully" >&2
 
 # Capture end CPU time across all worker nodes
 echo "Capturing final CPU metrics..." >&2
 END_TIME=$(date +%s)
 TOTAL_CPU_END=0
-for WORKER_IP in $(echo "${WORKER_IPS[@]}"); do
+for i in $(seq 1 $NUM_WORKERS); do
+    WORKER_IP=$(get_worker_ip $i)
     CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
     TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_TIME}")
 done
@@ -225,13 +235,13 @@ cat <<EOF
   "tasks": $TASKS,
   "input_topics": $INPUT_TOPICS_JSON,
   "output_topic": "$OUTPUT_TOPIC",
-  "sample_duration_sec": $SAMPLE_DURATION,
+  "sample_interval_sec": $SAMPLE_INTERVAL,
+  "measurement_duration_sec": $MEASUREMENT_DURATION,
   "num_samples": $NUM_SAMPLES,
-  "total_measurement_time_sec": $((SAMPLE_DURATION * NUM_SAMPLES)),
   "cpu_metrics": {
     "core_seconds": $CORE_SECONDS,
     "elapsed_time_sec": $ELAPSED_TIME,
-    "worker_nodes": ${#WORKER_IPS[@]}
+    "worker_nodes": $NUM_WORKERS
   },
   "input_throughput": {
     "average": $AVG_INPUT,
