@@ -105,12 +105,18 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
             # Wait for job to reach terminal state
             for i in {1..10}; do
                 JOB_STATE=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+                log "    Current state: $JOB_STATE (attempt $i/10)"
                 if [ "$JOB_STATE" = "Stopped" ] || [ "$JOB_STATE" = "Failed" ] || [ "$JOB_STATE" = "Finished" ]; then
-                    log "    Job state: $JOB_STATE"
+                    log "    ✓ Job reached terminal state: $JOB_STATE"
                     break
                 fi
                 sleep 1
             done
+
+            # Show final state before delete attempt
+            if [ "$JOB_STATE" != "Stopped" ] && [ "$JOB_STATE" != "Failed" ] && [ "$JOB_STATE" != "Finished" ]; then
+                log "    ⚠ Job still in state: $JOB_STATE after 10s wait"
+            fi
         fi
 
         # Now delete the pipeline
