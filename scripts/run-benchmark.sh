@@ -304,13 +304,29 @@ log "========================================="
 # Array to store all metrics for summary
 ALL_METRICS=()
 
-for pid in "${PIPELINE_IDS[@]}"; do
-    # Determine output topic from query name
-    # For now, hardcoded for q1, will need to be extracted from query
-    OUTPUT_TOPIC="nexmark-q1-results"
-    INPUT_TOPIC="nexmark-bid"  # Q1 uses bid topic
+# Map query names to their input topics
+declare -A QUERY_INPUT_TOPICS
+QUERY_INPUT_TOPICS["q1"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q2"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q3"]="nexmark-person"  # Joins person and auction
+QUERY_INPUT_TOPICS["q4"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q5"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q7"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q8"]="nexmark-person"  # Joins person and auction
 
-    log "Pipeline: $pid"
+# Track which query each pipeline belongs to
+QUERY_INDEX=0
+
+for pid in "${PIPELINE_IDS[@]}"; do
+    # Get the query name for this pipeline
+    QUERY_NAME="${QUERY_ARRAY[$QUERY_INDEX]}"
+    QUERY_INDEX=$((QUERY_INDEX + 1))
+
+    # Determine input and output topics based on query
+    OUTPUT_TOPIC="nexmark-${QUERY_NAME}-results"
+    INPUT_TOPIC="${QUERY_INPUT_TOPICS[$QUERY_NAME]}"
+
+    log "Pipeline: $pid (Query: $QUERY_NAME)"
     log "Input Topic: $INPUT_TOPIC"
     log "Output Topic: $OUTPUT_TOPIC"
     log ""
