@@ -9,6 +9,15 @@ source "$SCRIPT_DIR/../cluster-env.sh"
 source "$SCRIPT_DIR/common.sh"
 
 echo "=== measure-arroyo.sh started ===" >&2
+echo "Script location: $0" >&2
+echo "Working directory: $(pwd)" >&2
+echo "Parameters received:" >&2
+echo "  PIPELINE_ID: $1" >&2
+echo "  OUTPUT_TOPIC: $2" >&2
+echo "  INPUT_TOPIC: $3" >&2
+echo "  STEADY_STATE_WAIT: $4" >&2
+echo "  SAMPLE_DURATION: $5" >&2
+echo "  NUM_SAMPLES: $6" >&2
 
 # Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topic> [steady_state_wait] [sample_duration] [num_samples]
 PIPELINE_ID=$1
@@ -36,20 +45,31 @@ get_job_state() {
     echo "$job_data" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p' | head -1
 }
 
-# Check if pipeline job is running
-echo "Checking pipeline status..." >&2
-JOB_DATA=$(get_job_status)
-echo "Job API response: $JOB_DATA" >&2
-JOB_STATE=$(echo "$JOB_DATA" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p' | head -1)
-echo "Extracted job state: '$JOB_STATE'" >&2
+# Wait for pipeline job to start running
+echo "Waiting for pipeline job to start..." >&2
+MAX_WAIT=60
+WAIT_COUNT=0
+while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    JOB_DATA=$(get_job_status)
+    JOB_STATE=$(echo "$JOB_DATA" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p' | head -1)
+
+    if [ "$JOB_STATE" = "Running" ]; then
+        echo "✓ Job is running" >&2
+        break
+    elif [ "$JOB_STATE" = "Failed" ]; then
+        echo "ERROR: Pipeline job failed to start (state: $JOB_STATE)" >&2
+        exit 1
+    fi
+
+    echo "  Job state: $JOB_STATE, waiting... (${WAIT_COUNT}s/${MAX_WAIT}s)" >&2
+    sleep 2
+    WAIT_COUNT=$((WAIT_COUNT + 2))
+done
 
 if [ "$JOB_STATE" != "Running" ]; then
-    echo "ERROR: Pipeline job is not running (state: $JOB_STATE)" >&2
-    echo "0"
+    echo "ERROR: Pipeline job did not start within ${MAX_WAIT}s (state: $JOB_STATE)" >&2
     exit 1
 fi
-
-echo "✓ Job is running" >&2
 
 # Wait for steady state
 if [ "$STEADY_STATE_WAIT" -gt 0 ]; then
