@@ -311,13 +311,22 @@ for pid in "${PIPELINE_IDS[@]}"; do
     # Run Arroyo metrics measurement with multiple samples
     # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
     log "Running measurement script..."
+    log "  Parameters: pid=$pid, topic=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
+
     METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
     MEASURE_EXIT_CODE=$?
 
+    log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
+
     if [ $MEASURE_EXIT_CODE -ne 0 ]; then
-        log "❌ Measurement script failed with exit code $MEASURE_EXIT_CODE"
-        log "Output: $METRICS_JSON"
+        log "❌ Measurement script failed"
     fi
+
+    # Show all output from measurement script
+    log "Measurement output:"
+    echo "$METRICS_JSON" | while IFS= read -r line; do
+        log "  $line"
+    done
 
     # Stop the pipeline after measurement
     log "Stopping pipeline $pid..."

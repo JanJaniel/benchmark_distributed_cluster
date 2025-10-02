@@ -1,11 +1,13 @@
 #!/bin/bash
 # Arroyo-specific metrics collection
 
-set -e
+set -e  # Exit on any error
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SCRIPT_DIR/../cluster-env.sh"
 source "$SCRIPT_DIR/common.sh"
+
+echo "=== measure-arroyo.sh started ===" >&2
 
 # Usage: measure-arroyo.sh <pipeline_id> <output_topic> [steady_state_wait] [sample_duration] [num_samples]
 PIPELINE_ID=$1
@@ -55,11 +57,14 @@ fi
 
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
+echo "Using Kafka broker: $KAFKA_BROKER" >&2
 WAIT_COUNT=0
 MAX_WAIT=60
 while ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; do
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
         echo "ERROR: Output topic '$OUTPUT_TOPIC' did not appear after ${MAX_WAIT}s" >&2
+        echo "Listing all topics:" >&2
+        ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-topics --bootstrap-server $KAFKA_BROKER --list 2>/dev/null" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" >&2
         exit 1
     fi
     echo "  Topic not ready yet, waiting... (${WAIT_COUNT}/${MAX_WAIT}s)" >&2
@@ -77,13 +82,17 @@ for i in $(seq 1 $NUM_SAMPLES); do
     echo "  Sample $i/$NUM_SAMPLES..." >&2
 
     SAMPLE_START=$(date +%s)
+    echo "    Measuring throughput (${SAMPLE_DURATION}s)..." >&2
     THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
+    echo "    Measurement complete" >&2
 
     SAMPLES+=($THROUGHPUT)
     SAMPLE_TIMESTAMPS+=($SAMPLE_START)
 
     echo "    → $THROUGHPUT events/sec" >&2
 done
+
+echo "All samples collected successfully" >&2
 
 # Calculate statistics
 SAMPLES_STR="${SAMPLES[*]}"
