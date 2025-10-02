@@ -94,6 +94,17 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
     log "Found $PIPELINE_COUNT old pipeline(s), deleting..."
     PIPELINE_IDS=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -oP '"id":"[^"]*"' | cut -d'"' -f4)
     for pid in $PIPELINE_IDS; do
+        # First stop the pipeline's job
+        JOB_ID=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        if [ -n "$JOB_ID" ]; then
+            log "  Stopping job for pipeline: $pid"
+            curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs/$JOB_ID" \
+                -H "Content-Type: application/json" \
+                -d '{"stop":"immediate"}' >/dev/null
+            sleep 2  # Wait for job to stop
+        fi
+
+        # Now delete the pipeline
         log "  Deleting pipeline: $pid"
         DELETE_RESPONSE=$(curl -s -X DELETE "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid")
         if echo "$DELETE_RESPONSE" | grep -qi "error"; then
@@ -286,6 +297,16 @@ for pid in "${PIPELINE_IDS[@]}"; do
     if [ $MEASURE_EXIT_CODE -ne 0 ]; then
         log "❌ Measurement script failed with exit code $MEASURE_EXIT_CODE"
         log "Output: $METRICS_JSON"
+    fi
+
+    # Stop the pipeline after measurement
+    log "Stopping pipeline $pid..."
+    JOB_ID=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [ -n "$JOB_ID" ]; then
+        curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs/$JOB_ID" \
+            -H "Content-Type: application/json" \
+            -d '{"stop":"immediate"}' >/dev/null
+        log "✅ Pipeline stopped"
     fi
 
     # Extract and display metrics

@@ -50,13 +50,20 @@ if [ "$STEADY_STATE_WAIT" -gt 0 ]; then
     sleep "$STEADY_STATE_WAIT"
 fi
 
-# Check if output topic exists
-echo "Checking output topic: $OUTPUT_TOPIC" >&2
-if ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; then
-    echo "WARNING: Output topic '$OUTPUT_TOPIC' does not exist yet" >&2
-    echo "0"
-    exit 0
-fi
+# Wait for output topic to exist (retry up to 60 seconds)
+echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
+WAIT_COUNT=0
+MAX_WAIT=60
+while ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; do
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+        echo "ERROR: Output topic '$OUTPUT_TOPIC' did not appear after ${MAX_WAIT}s" >&2
+        exit 1
+    fi
+    echo "  Topic not ready yet, waiting... (${WAIT_COUNT}/${MAX_WAIT}s)" >&2
+    sleep 5
+    WAIT_COUNT=$((WAIT_COUNT + 5))
+done
+echo "✓ Output topic exists" >&2
 
 # Collect multiple throughput samples
 echo "Collecting $NUM_SAMPLES samples (${SAMPLE_DURATION}s each)..." >&2
