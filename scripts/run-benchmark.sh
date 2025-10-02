@@ -226,6 +226,14 @@ EOF
     if [ -n "$GENERATOR_CONTAINER_ID" ]; then
         log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
         log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
+
+        # Show generator logs to verify it's working
+        sleep 2
+        log ""
+        log "Generator logs (first 10 lines):"
+        ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker logs nexmark-generator 2>&1 | head -10" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" | tee -a "$LOG_FILE"
+        log ""
+
         return 0
     else
         log "❌ Failed to start Nexmark generator"

@@ -20,11 +20,14 @@ measure_topic_throughput() {
     local duration=${3:-10}
 
     local before=$(get_kafka_topic_offset "$broker" "$topic")
+    echo "    DEBUG: Topic $topic - offset before: $before" >&2
     sleep "$duration"
     local after=$(get_kafka_topic_offset "$broker" "$topic")
+    echo "    DEBUG: Topic $topic - offset after: $after" >&2
 
     local diff=$((after - before))
     local throughput=$((diff / duration))
+    echo "    DEBUG: Topic $topic - diff: $diff, throughput: $throughput" >&2
 
     echo "$throughput"
 }
