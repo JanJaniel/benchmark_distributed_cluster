@@ -67,9 +67,9 @@ def next_string(event_id, max_length):
 def format_timestamp(timestamp_ms, use_iso=False):
     """Convert millisecond timestamp to desired format."""
     if use_iso:
-        # Format as Berlin time (local time)
+        # Format as local time WITHOUT timezone suffix (Arroyo expects timezone-naive timestamps)
         dt = datetime.fromtimestamp(timestamp_ms / 1000.0)
-        # Return ISO format without suffix - Berlin time
+        # Return ISO format without suffix - local time
         return dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
     return timestamp_ms
 

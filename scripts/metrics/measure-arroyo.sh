@@ -80,18 +80,18 @@ if [ "$STEADY_STATE_WAIT" -gt 0 ]; then
     sleep "$STEADY_STATE_WAIT"
 fi
 
-# Capture start CPU time across all worker nodes
-echo "Capturing initial CPU metrics..." >&2
+# Capture start CPU time for Arroyo worker processes across all worker nodes
+echo "Capturing initial CPU metrics (Arroyo workers only)..." >&2
 START_TIME=$(date +%s)
 TOTAL_CPU_START=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    # Get CPU time in jiffies from /proc/stat (user + nice + system)
-    # Note: jiffies are typically 100 per second (USER_HZ), we'll convert to seconds at the end
-    CPU_JIFFIES=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print \$2+\$3+\$4}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_JIFFIES}")
+    # Get CPU time for arroyo-bin processes using ps
+    # ps returns cumulative CPU time in format HH:MM:SS or MM:SS
+    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps -C arroyo-bin -o cputime= 2>/dev/null | awk '{split(\$1,a,\":\"); if(length(a)==3) total += a[1]*3600 + a[2]*60 + a[3]; else total += a[1]*60 + a[2]} END {print total+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_TIME}")
 done
-echo "  Initial CPU jiffies: $TOTAL_CPU_START" >&2
+echo "  Initial Arroyo worker CPU time: ${TOTAL_CPU_START}s" >&2
 
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
@@ -161,23 +161,22 @@ NUM_SAMPLES=1
 
 echo "All samples collected successfully" >&2
 
-# Capture end CPU time across all worker nodes
-echo "Capturing final CPU metrics..." >&2
+# Capture end CPU time for Arroyo worker processes across all worker nodes
+echo "Capturing final CPU metrics (Arroyo workers only)..." >&2
 END_TIME=$(date +%s)
 TOTAL_CPU_END=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    CPU_JIFFIES=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print \$2+\$3+\$4}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_JIFFIES}")
+    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps -C arroyo-bin -o cputime= 2>/dev/null | awk '{split(\$1,a,\":\"); if(length(a)==3) total += a[1]*3600 + a[2]*60 + a[3]; else total += a[1]*60 + a[2]} END {print total+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_TIME}")
 done
-echo "  Final CPU jiffies: $TOTAL_CPU_END" >&2
+echo "  Final Arroyo worker CPU time: ${TOTAL_CPU_END}s" >&2
 
 # Calculate CPU metrics
 ELAPSED_TIME=$((END_TIME - START_TIME))
-CPU_JIFFIES_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
-# Convert jiffies to seconds (USER_HZ = 100 typically)
-# Core-seconds = CPU time used across all nodes
-CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_JIFFIES_USED / 100}")
+CPU_TIME_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
+# Core-seconds = CPU time used by Arroyo workers across all nodes (already in seconds from ps)
+CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_TIME_USED}")
 
 # Calculate statistics for output
 OUTPUT_SAMPLES_STR="${OUTPUT_SAMPLES[*]}"

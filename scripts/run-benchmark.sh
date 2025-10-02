@@ -234,6 +234,24 @@ EOF
         ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker logs nexmark-generator 2>&1 | head -10" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" | tee -a "$LOG_FILE"
         log ""
 
+        # Check timestamp format and timezone alignment
+        log "Checking timestamp format and timezone..."
+        log "  System time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%S")"
+        log "  System time (local): $(date +"%Y-%m-%dT%H:%M:%S")"
+
+        # Sample actual event from Kafka to verify timestamp format
+        log "  Sampling event from nexmark-bid topic:"
+        SAMPLE_EVENT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-console-consumer --bootstrap-server localhost:19092 --topic nexmark-bid --max-messages 1 --timeout-ms 5000 2>/dev/null" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" | tail -1)
+
+        if [ -n "$SAMPLE_EVENT" ]; then
+            EVENT_TIME=$(echo "$SAMPLE_EVENT" | jq -r '.date_time' 2>/dev/null || echo "failed to parse")
+            log "    Event date_time: $EVENT_TIME"
+            log "    Event full: $(echo "$SAMPLE_EVENT" | head -c 200)..."
+        else
+            log "    Could not sample event (topic might be empty)"
+        fi
+        log ""
+
         return 0
     else
         log "❌ Failed to start Nexmark generator"
