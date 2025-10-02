@@ -201,7 +201,8 @@ cleanup() {
 
 # Set trap to cleanup on exit - use SIGINT for Ctrl+C
 trap 'cleanup; exit 130' INT
-trap 'cleanup' EXIT TERM
+trap 'cleanup' TERM
+# Note: No EXIT trap - cleanup is called explicitly at end of script
 
 # Start data generator
 log "Starting Nexmark data generator..."
@@ -436,7 +437,7 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
 log "Summary saved to: $SUMMARY_FILE"
 log "Logs saved to: $LOG_FILE"
 
-# Exit successfully - cleanup will be called by trap
-exit 0
+# Call cleanup explicitly before exit
+cleanup
 
 } 2>&1  # End of main logging block
