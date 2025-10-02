@@ -312,16 +312,24 @@ for pid in "${PIPELINE_IDS[@]}"; do
     # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
     log "Running measurement script..."
     log "  Parameters: pid=$pid, topic=$OUTPUT_TOPIC, steady_state=30s, sample=10s, samples=10"
-    log "  Script path: ${SCRIPT_DIR}/metrics/measure-arroyo.sh"
-    log "  Testing basic execution..."
 
-    # Test if script can run at all
-    TEST_OUTPUT=$(bash -c 'echo "TEST FROM BASH"' 2>&1)
-    log "  Bash test: $TEST_OUTPUT"
+    # Test reading the script
+    log "  First 5 lines of script:"
+    head -5 ${SCRIPT_DIR}/metrics/measure-arroyo.sh | while IFS= read -r line; do
+        log "    $line"
+    done
 
-    # Try running the script with bash explicitly
+    # Direct inline test
+    log "  Testing inline script call..."
+    TEST_SCRIPT_OUTPUT=$(bash -c "echo 'Args: $pid $OUTPUT_TOPIC'; exit 0" 2>&1)
+    log "  Inline test result: $TEST_SCRIPT_OUTPUT"
+
+    # Try running the script with bash explicitly and capture everything
+    log "  Calling measure-arroyo.sh..."
     METRICS_JSON=$(bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
     MEASURE_EXIT_CODE=$?
+    log "  Script returned with exit code: $MEASURE_EXIT_CODE"
+    log "  Output length: ${#METRICS_JSON} characters"
 
     log "Measurement script completed with exit code: $MEASURE_EXIT_CODE"
 
