@@ -95,7 +95,10 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
     PIPELINE_IDS=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -oP '"id":"[^"]*"' | cut -d'"' -f4)
     for pid in $PIPELINE_IDS; do
         log "  Deleting pipeline: $pid"
-        curl -s -X DELETE "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" >/dev/null
+        DELETE_RESPONSE=$(curl -s -X DELETE "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid")
+        if echo "$DELETE_RESPONSE" | grep -qi "error"; then
+            log "    ⚠ Delete failed: $DELETE_RESPONSE"
+        fi
     done
     log "✅ Old pipelines deleted"
 else
@@ -276,7 +279,14 @@ for pid in "${PIPELINE_IDS[@]}"; do
 
     # Run Arroyo metrics measurement with multiple samples
     # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
+    log "Running measurement script..."
     METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
+    MEASURE_EXIT_CODE=$?
+
+    if [ $MEASURE_EXIT_CODE -ne 0 ]; then
+        log "❌ Measurement script failed with exit code $MEASURE_EXIT_CODE"
+        log "Output: $METRICS_JSON"
+    fi
 
     # Extract and display metrics
     AVG_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
