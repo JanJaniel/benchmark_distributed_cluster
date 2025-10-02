@@ -219,7 +219,7 @@ docker run -d --rm \
     -e TOTAL_EVENTS=${TOTAL_EVENTS} \
     -v \$(pwd)/nexmark-generator-deterministic.py:/app/generator/nexmark-generator-deterministic.py:ro \
     nexmark-generator:latest \
-    --iso
+    python /app/generator/nexmark-generator-deterministic.py --iso
 EOF
 )
 
