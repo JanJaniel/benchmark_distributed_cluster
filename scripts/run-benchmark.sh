@@ -226,7 +226,7 @@ if [ -n "$GENERATOR_CONTAINER_ID" ]; then
     # Start background monitoring of generator
     (
         sleep 5  # Wait for generator to start
-        while docker ps | grep -q nexmark-generator 2>/dev/null; do
+        while ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker ps | grep -q nexmark-generator" 2>/dev/null; do
             LAST_LINE=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker logs nexmark-generator 2>&1 | tail -1" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi")
             if echo "$LAST_LINE" | grep -q "events/sec"; then
                 echo "[Generator] $LAST_LINE" | tee -a "$LOG_FILE"
