@@ -421,14 +421,6 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
     done
 
     echo ""
-    echo "=========================================="
-    echo "Raw JSON Metrics"
-    echo "=========================================="
-    echo ""
-    for metrics in "${ALL_METRICS[@]}"; do
-        echo "$metrics" | jq '.' 2>/dev/null || echo "$metrics"
-        echo ""
-    done
 } > "$SUMMARY_FILE"
 
 log "Summary saved to: $SUMMARY_FILE"
