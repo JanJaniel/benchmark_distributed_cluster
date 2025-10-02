@@ -271,22 +271,36 @@ for pid in "${PIPELINE_IDS[@]}"; do
 
     log "Pipeline: $pid"
     log "Output Topic: $OUTPUT_TOPIC"
+    log ""
 
-    # Run Arroyo metrics measurement
-    METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 2>&1)
+    # Run Arroyo metrics measurement with multiple samples
+    # Parameters: pipeline_id, output_topic, steady_state_wait, sample_duration, num_samples
+    METRICS_JSON=$(${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" 30 10 10 2>&1)
 
     # Extract and display metrics
-    THROUGHPUT=$(echo "$METRICS_JSON" | grep '"throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    AVG_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    MIN_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"min"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    MAX_THROUGHPUT=$(echo "$METRICS_JSON" | grep '"max"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    STDDEV=$(echo "$METRICS_JSON" | grep '"stddev"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    NUM_SAMPLES=$(echo "$METRICS_JSON" | grep '"num_samples"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
 
+    log "========================================="
+    log "Results for Pipeline $pid"
+    log "========================================="
     log ""
-    log "Results:"
+    log "Job Information:"
     log "  Job ID: $JOB_ID"
     log "  Job State: $JOB_STATE"
     log "  Tasks: $TASKS"
-    log "  Throughput: $THROUGHPUT events/sec"
+    log ""
+    log "Throughput Statistics ($NUM_SAMPLES samples):"
+    log "  Average: $AVG_THROUGHPUT events/sec"
+    log "  Minimum: $MIN_THROUGHPUT events/sec"
+    log "  Maximum: $MAX_THROUGHPUT events/sec"
+    log "  Std Dev: ±$STDDEV events/sec"
     log ""
     log "Full metrics JSON:"
     echo "$METRICS_JSON" | grep '^{' | tee -a "$LOG_FILE"

@@ -42,3 +42,77 @@ kafka_topic_exists() {
     echo "$topics" | grep -q "^${topic}$"
     return $?
 }
+
+# Calculate average from array of numbers
+# Usage: calculate_average "sample1 sample2 sample3 ..."
+calculate_average() {
+    local samples="$1"
+    local count=0
+    local sum=0
+
+    for val in $samples; do
+        sum=$((sum + val))
+        count=$((count + 1))
+    done
+
+    if [ $count -eq 0 ]; then
+        echo "0"
+    else
+        echo $((sum / count))
+    fi
+}
+
+# Calculate minimum from array of numbers
+# Usage: calculate_min "sample1 sample2 sample3 ..."
+calculate_min() {
+    local samples="$1"
+    local min=""
+
+    for val in $samples; do
+        if [ -z "$min" ] || [ $val -lt $min ]; then
+            min=$val
+        fi
+    done
+
+    echo "${min:-0}"
+}
+
+# Calculate maximum from array of numbers
+# Usage: calculate_max "sample1 sample2 sample3 ..."
+calculate_max() {
+    local samples="$1"
+    local max=""
+
+    for val in $samples; do
+        if [ -z "$max" ] || [ $val -gt $max ]; then
+            max=$val
+        fi
+    done
+
+    echo "${max:-0}"
+}
+
+# Calculate standard deviation from array of numbers
+# Usage: calculate_stddev "sample1 sample2 sample3 ..." <average>
+calculate_stddev() {
+    local samples="$1"
+    local avg=$2
+    local count=0
+    local sum_sq_diff=0
+
+    for val in $samples; do
+        local diff=$((val - avg))
+        sum_sq_diff=$((sum_sq_diff + diff * diff))
+        count=$((count + 1))
+    done
+
+    if [ $count -eq 0 ]; then
+        echo "0"
+    else
+        # sqrt(sum_sq_diff / count)
+        local variance=$((sum_sq_diff / count))
+        # Simple integer square root using awk
+        local stddev=$(awk "BEGIN {print int(sqrt($variance))}")
+        echo "$stddev"
+    fi
+}

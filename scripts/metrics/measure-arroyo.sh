@@ -7,14 +7,15 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SCRIPT_DIR/../cluster-env.sh"
 source "$SCRIPT_DIR/common.sh"
 
-# Usage: measure-arroyo.sh <pipeline_id> <output_topic> [steady_state_wait] [sample_duration]
+# Usage: measure-arroyo.sh <pipeline_id> <output_topic> [steady_state_wait] [sample_duration] [num_samples]
 PIPELINE_ID=$1
 OUTPUT_TOPIC=$2
 STEADY_STATE_WAIT=${3:-30}  # Default: wait 30s for steady state
-SAMPLE_DURATION=${4:-10}     # Default: sample for 10s
+SAMPLE_DURATION=${4:-10}     # Default: sample for 10s each
+NUM_SAMPLES=${5:-10}         # Default: collect 10 samples
 
 if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ]; then
-    echo "Usage: $0 <pipeline_id> <output_topic> [steady_state_wait] [sample_duration]"
+    echo "Usage: $0 <pipeline_id> <output_topic> [steady_state_wait] [sample_duration] [num_samples]"
     exit 1
 fi
 
@@ -57,14 +58,44 @@ if ! kafka_topic_exists "$KAFKA_BROKER" "$OUTPUT_TOPIC"; then
     exit 0
 fi
 
-# Measure throughput
-echo "Measuring throughput (sampling for ${SAMPLE_DURATION}s)..." >&2
-THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
+# Collect multiple throughput samples
+echo "Collecting $NUM_SAMPLES samples (${SAMPLE_DURATION}s each)..." >&2
+SAMPLES=()
+SAMPLE_TIMESTAMPS=()
+
+for i in $(seq 1 $NUM_SAMPLES); do
+    echo "  Sample $i/$NUM_SAMPLES..." >&2
+
+    SAMPLE_START=$(date +%s)
+    THROUGHPUT=$(measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION")
+
+    SAMPLES+=($THROUGHPUT)
+    SAMPLE_TIMESTAMPS+=($SAMPLE_START)
+
+    echo "    → $THROUGHPUT events/sec" >&2
+done
+
+# Calculate statistics
+SAMPLES_STR="${SAMPLES[*]}"
+AVG_THROUGHPUT=$(calculate_average "$SAMPLES_STR")
+MIN_THROUGHPUT=$(calculate_min "$SAMPLES_STR")
+MAX_THROUGHPUT=$(calculate_max "$SAMPLES_STR")
+STDDEV_THROUGHPUT=$(calculate_stddev "$SAMPLES_STR" "$AVG_THROUGHPUT")
 
 # Get additional job metrics
 JOB_DATA=$(get_job_status)
 JOB_ID=$(echo "$JOB_DATA" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -1)
 TASKS=$(echo "$JOB_DATA" | sed -n 's/.*"tasks":\([0-9]*\).*/\1/p' | head -1)
+
+# Format samples array for JSON
+SAMPLES_JSON="["
+for i in "${!SAMPLES[@]}"; do
+    if [ $i -gt 0 ]; then
+        SAMPLES_JSON+=","
+    fi
+    SAMPLES_JSON+="{\"sample_num\":$((i+1)),\"throughput\":${SAMPLES[$i]},\"timestamp\":${SAMPLE_TIMESTAMPS[$i]}}"
+done
+SAMPLES_JSON+="]"
 
 # Output JSON with all metrics
 cat <<EOF
@@ -74,8 +105,16 @@ cat <<EOF
   "job_state": "$JOB_STATE",
   "tasks": $TASKS,
   "output_topic": "$OUTPUT_TOPIC",
-  "throughput_events_per_sec": $THROUGHPUT,
   "sample_duration_sec": $SAMPLE_DURATION,
+  "num_samples": $NUM_SAMPLES,
+  "total_measurement_time_sec": $((SAMPLE_DURATION * NUM_SAMPLES)),
+  "throughput": {
+    "average": $AVG_THROUGHPUT,
+    "min": $MIN_THROUGHPUT,
+    "max": $MAX_THROUGHPUT,
+    "stddev": $STDDEV_THROUGHPUT
+  },
+  "samples": $SAMPLES_JSON,
   "timestamp": $(date +%s)
 }
 EOF
