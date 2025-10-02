@@ -398,7 +398,8 @@ for pid in "${PIPELINE_IDS[@]}"; do
     log "  Output (measured): $AVG_OUTPUT events/sec"
     log ""
     log "Full metrics JSON:"
-    PIPELINE_METRICS=$(echo "$METRICS_JSON" | grep '^{')
+    # Extract JSON (everything from first { to last })
+    PIPELINE_METRICS=$(echo "$METRICS_JSON" | sed -n '/^{/,/^}$/p')
     echo "$PIPELINE_METRICS" | tee -a "$LOG_FILE"
 
     # Store metrics for summary
@@ -435,9 +436,9 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
 
     # Add each query result
     for metrics in "${ALL_METRICS[@]}"; do
-        QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":"nexmark-\K[^-]+' || echo "unknown")
-        INPUT_AVG=$(echo "$metrics" | grep -A 4 '"input_throughput"' | grep -oP '"average":\K[0-9]+' || echo "0")
-        OUTPUT_AVG=$(echo "$metrics" | grep -A 4 '"output_throughput"' | grep -oP '"average":\K[0-9]+' || echo "0")
+        QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":\s*"nexmark-\K[^-]+' || echo "unknown")
+        INPUT_AVG=$(echo "$metrics" | jq -r '.input_throughput.average // 0' 2>/dev/null || echo "0")
+        OUTPUT_AVG=$(echo "$metrics" | jq -r '.output_throughput.average // 0' 2>/dev/null || echo "0")
 
         printf "%-15s %-30s %-30s\n" "$QUERY_NAME" "$INPUT_AVG events/sec" "$OUTPUT_AVG events/sec"
     done
