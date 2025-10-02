@@ -23,9 +23,9 @@ fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
 
-# Default values
-EVENTS_PER_SECOND=50000
-TOTAL_EVENTS=10000000
+# Default values (adjusted for Raspberry Pi cluster capacity)
+EVENTS_PER_SECOND=4000
+TOTAL_EVENTS=500000
 QUERIES="q1,q2,q3,q5,q7,q8"
 PARALLELISM=9
 
