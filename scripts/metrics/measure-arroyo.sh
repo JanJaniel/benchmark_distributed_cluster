@@ -1,7 +1,8 @@
 #!/bin/bash
 # Arroyo-specific metrics collection
 
-set -e  # Exit on any error
+# Note: NOT using set -e to see all errors
+# set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SCRIPT_DIR/../cluster-env.sh"
