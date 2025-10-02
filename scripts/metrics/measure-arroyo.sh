@@ -34,7 +34,10 @@ get_job_state() {
 
 # Check if pipeline job is running
 echo "Checking pipeline status..." >&2
-JOB_STATE=$(get_job_state)
+JOB_DATA=$(get_job_status)
+echo "Job API response: $JOB_DATA" >&2
+JOB_STATE=$(echo "$JOB_DATA" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p' | head -1)
+echo "Extracted job state: '$JOB_STATE'" >&2
 
 if [ "$JOB_STATE" != "Running" ]; then
     echo "ERROR: Pipeline job is not running (state: $JOB_STATE)" >&2

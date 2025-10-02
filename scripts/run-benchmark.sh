@@ -97,11 +97,20 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
         # First stop the pipeline's job
         JOB_ID=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
         if [ -n "$JOB_ID" ]; then
-            log "  Stopping job for pipeline: $pid"
+            log "  Stopping job $JOB_ID for pipeline: $pid"
             curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs/$JOB_ID" \
                 -H "Content-Type: application/json" \
                 -d '{"stop":"immediate"}' >/dev/null
-            sleep 2  # Wait for job to stop
+
+            # Wait for job to reach terminal state
+            for i in {1..10}; do
+                JOB_STATE=$(curl -s "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid/jobs" | grep -oP '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+                if [ "$JOB_STATE" = "Stopped" ] || [ "$JOB_STATE" = "Failed" ] || [ "$JOB_STATE" = "Finished" ]; then
+                    log "    Job state: $JOB_STATE"
+                    break
+                fi
+                sleep 1
+            done
         fi
 
         # Now delete the pipeline
