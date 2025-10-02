@@ -7,9 +7,9 @@ get_kafka_topic_offset() {
     local broker=$1
     local topic=$2
 
-    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-run-class kafka.tools.GetOffsetShell \
+    ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-run-class kafka.tools.GetOffsetShell \
         --broker-list $broker \
-        --topic $topic 2>/dev/null" | awk -F: '{sum+=$NF} END {print sum+0}'
+        --topic $topic 2>/dev/null" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" | awk -F: '{sum+=$NF} END {print sum+0}'
 }
 
 # Measure throughput by sampling topic offset over time
@@ -35,9 +35,9 @@ kafka_topic_exists() {
     local broker=$1
     local topic=$2
 
-    local topics=$(ssh ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-topics \
+    local topics=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker exec kafka kafka-topics \
         --bootstrap-server $broker \
-        --list 2>/dev/null")
+        --list 2>/dev/null" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution")
 
     echo "$topics" | grep -q "^${topic}$"
     return $?
