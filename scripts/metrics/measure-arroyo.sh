@@ -14,23 +14,26 @@ echo "Working directory: $(pwd)" >&2
 echo "Parameters received:" >&2
 echo "  PIPELINE_ID: $1" >&2
 echo "  OUTPUT_TOPIC: $2" >&2
-echo "  INPUT_TOPIC: $3" >&2
+echo "  INPUT_TOPICS: $3" >&2
 echo "  STEADY_STATE_WAIT: $4" >&2
 echo "  SAMPLE_DURATION: $5" >&2
 echo "  NUM_SAMPLES: $6" >&2
 
-# Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topic> [steady_state_wait] [sample_duration] [num_samples]
+# Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_duration] [num_samples]
 PIPELINE_ID=$1
 OUTPUT_TOPIC=$2
-INPUT_TOPIC=$3
+INPUT_TOPICS_CSV=$3  # Can be single topic or comma-separated list
 STEADY_STATE_WAIT=${4:-30}  # Default: wait 30s for steady state
 SAMPLE_DURATION=${5:-10}     # Default: sample for 10s each
 NUM_SAMPLES=${6:-10}         # Default: collect 10 samples
 
-if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ] || [ -z "$INPUT_TOPIC" ]; then
-    echo "Usage: $0 <pipeline_id> <output_topic> <input_topic> [steady_state_wait] [sample_duration] [num_samples]"
+if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ] || [ -z "$INPUT_TOPICS_CSV" ]; then
+    echo "Usage: $0 <pipeline_id> <output_topic> <input_topics_csv> [steady_state_wait] [sample_duration] [num_samples]"
     exit 1
 fi
+
+# Convert comma-separated topics to array
+IFS=',' read -ra INPUT_TOPICS <<< "$INPUT_TOPICS_CSV"
 
 KAFKA_BROKER="localhost:19092"  # Internal broker address (from inside kafka container)
 
@@ -77,6 +80,16 @@ if [ "$STEADY_STATE_WAIT" -gt 0 ]; then
     sleep "$STEADY_STATE_WAIT"
 fi
 
+# Capture start CPU time across all worker nodes
+echo "Capturing initial CPU metrics..." >&2
+START_TIME=$(date +%s)
+TOTAL_CPU_START=0
+for WORKER_IP in $(echo "${WORKER_IPS[@]}"); do
+    # Get CPU time in seconds from /proc/stat (sum of user + system time across all cores)
+    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_TIME}")
+done
+
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
 echo "Using Kafka broker: $KAFKA_BROKER" >&2
@@ -105,29 +118,64 @@ for i in $(seq 1 $NUM_SAMPLES); do
     echo "  Sample $i/$NUM_SAMPLES..." >&2
 
     SAMPLE_START=$(date +%s)
-    echo "    Measuring input & output throughput simultaneously (${SAMPLE_DURATION}s)..." >&2
 
-    # Measure both topics in parallel using temp files
-    measure_topic_throughput "$KAFKA_BROKER" "$INPUT_TOPIC" "$SAMPLE_DURATION" > /tmp/input_$$.txt &
-    INPUT_PID=$!
+    # Measure all input topics in parallel
+    if [ ${#INPUT_TOPICS[@]} -eq 1 ]; then
+        echo "    Measuring input & output throughput simultaneously (${SAMPLE_DURATION}s)..." >&2
+    else
+        echo "    Measuring ${#INPUT_TOPICS[@]} input topics & output simultaneously (${SAMPLE_DURATION}s)..." >&2
+    fi
+
+    # Start measuring all input topics in parallel
+    INPUT_PIDS=()
+    for idx in "${!INPUT_TOPICS[@]}"; do
+        TOPIC="${INPUT_TOPICS[$idx]}"
+        measure_topic_throughput "$KAFKA_BROKER" "$TOPIC" "$SAMPLE_DURATION" > /tmp/input_${idx}_$$.txt &
+        INPUT_PIDS+=($!)
+    done
+
+    # Start measuring output topic
     measure_topic_throughput "$KAFKA_BROKER" "$OUTPUT_TOPIC" "$SAMPLE_DURATION" > /tmp/output_$$.txt &
     OUTPUT_PID=$!
 
-    # Wait for both to complete
-    wait $INPUT_PID
+    # Wait for all to complete
+    for pid in "${INPUT_PIDS[@]}"; do
+        wait $pid
+    done
     wait $OUTPUT_PID
 
-    INPUT_THROUGHPUT=$(cat /tmp/input_$$.txt)
+    # Sum up all input topics
+    TOTAL_INPUT=0
+    for idx in "${!INPUT_TOPICS[@]}"; do
+        TOPIC_THROUGHPUT=$(cat /tmp/input_${idx}_$$.txt)
+        TOTAL_INPUT=$((TOTAL_INPUT + TOPIC_THROUGHPUT))
+    done
+
     OUTPUT_THROUGHPUT=$(cat /tmp/output_$$.txt)
 
-    echo "    Input: $INPUT_THROUGHPUT events/sec, Output: $OUTPUT_THROUGHPUT events/sec" >&2
+    echo "    Input: $TOTAL_INPUT events/sec (total), Output: $OUTPUT_THROUGHPUT events/sec" >&2
 
     OUTPUT_SAMPLES+=($OUTPUT_THROUGHPUT)
-    INPUT_SAMPLES+=($INPUT_THROUGHPUT)
+    INPUT_SAMPLES+=($TOTAL_INPUT)
     SAMPLE_TIMESTAMPS+=($SAMPLE_START)
 done
 
 echo "All samples collected successfully" >&2
+
+# Capture end CPU time across all worker nodes
+echo "Capturing final CPU metrics..." >&2
+END_TIME=$(date +%s)
+TOTAL_CPU_END=0
+for WORKER_IP in $(echo "${WORKER_IPS[@]}"); do
+    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_TIME}")
+done
+
+# Calculate CPU metrics
+ELAPSED_TIME=$((END_TIME - START_TIME))
+CPU_TIME_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
+# Core-seconds = CPU time used across all nodes
+CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_TIME_USED}")
 
 # Calculate statistics for output
 OUTPUT_SAMPLES_STR="${OUTPUT_SAMPLES[*]}"
@@ -158,6 +206,16 @@ for i in "${!OUTPUT_SAMPLES[@]}"; do
 done
 SAMPLES_JSON+="]"
 
+# Build input topics JSON array
+INPUT_TOPICS_JSON="["
+for idx in "${!INPUT_TOPICS[@]}"; do
+    if [ $idx -gt 0 ]; then
+        INPUT_TOPICS_JSON+=","
+    fi
+    INPUT_TOPICS_JSON+="\"${INPUT_TOPICS[$idx]}\""
+done
+INPUT_TOPICS_JSON+="]"
+
 # Output JSON with all metrics
 cat <<EOF
 {
@@ -165,11 +223,16 @@ cat <<EOF
   "job_id": "$JOB_ID",
   "job_state": "$JOB_STATE",
   "tasks": $TASKS,
-  "input_topic": "$INPUT_TOPIC",
+  "input_topics": $INPUT_TOPICS_JSON,
   "output_topic": "$OUTPUT_TOPIC",
   "sample_duration_sec": $SAMPLE_DURATION,
   "num_samples": $NUM_SAMPLES,
   "total_measurement_time_sec": $((SAMPLE_DURATION * NUM_SAMPLES)),
+  "cpu_metrics": {
+    "core_seconds": $CORE_SECONDS,
+    "elapsed_time_sec": $ELAPSED_TIME,
+    "worker_nodes": ${#WORKER_IPS[@]}
+  },
   "input_throughput": {
     "average": $AVG_INPUT,
     "min": $MIN_INPUT,

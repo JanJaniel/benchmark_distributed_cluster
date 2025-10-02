@@ -25,10 +25,10 @@ fi
 
 source "$SCRIPT_DIR/cluster-env.sh"
 
-# Default values (adjusted for Raspberry Pi cluster capacity)
-EVENTS_PER_SECOND=4000
-TOTAL_EVENTS=1000000  # Increased to ensure generator runs throughout measurement (30s + 100s = 130s × 4000 = 520k events needed)
-QUERIES="q1,q2,q3,q5,q7,q8"
+# Default values (adjusted for Raspberry Pi cluster capacity and windowing queries)
+EVENTS_PER_SECOND=10000
+TOTAL_EVENTS=5000000  # High enough for windowing queries to have sufficient data (30s + 100s = 130s × 10000 = 1.3M events needed per query)
+QUERIES="q1,q2,q3,q4,q5,q7,q8"
 PARALLELISM=9
 
 # Parse command line arguments
@@ -303,15 +303,15 @@ IFS=',' read -ra QUERY_ARRAY <<< "$QUERIES"
 # Array to store all metrics for summary
 ALL_METRICS=()
 
-# Map query names to their input topics
+# Map query names to their input topics (comma-separated for joins)
 declare -A QUERY_INPUT_TOPICS
 QUERY_INPUT_TOPICS["q1"]="nexmark-bid"
 QUERY_INPUT_TOPICS["q2"]="nexmark-bid"
-QUERY_INPUT_TOPICS["q3"]="nexmark-person"  # Joins person and auction
-QUERY_INPUT_TOPICS["q4"]="nexmark-bid"
+QUERY_INPUT_TOPICS["q3"]="nexmark-person,nexmark-auction"  # Joins person and auction
+QUERY_INPUT_TOPICS["q4"]="nexmark-auction,nexmark-bid"  # Joins auction and bid
 QUERY_INPUT_TOPICS["q5"]="nexmark-bid"
 QUERY_INPUT_TOPICS["q7"]="nexmark-bid"
-QUERY_INPUT_TOPICS["q8"]="nexmark-person"  # Joins person and auction
+QUERY_INPUT_TOPICS["q8"]="nexmark-person,nexmark-auction"  # Joins person and auction
 
 for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log ""
@@ -389,6 +389,7 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     # Extract and display metrics
     AVG_INPUT=$(echo "$METRICS_JSON" | grep -A 4 '"input_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     AVG_OUTPUT=$(echo "$METRICS_JSON" | grep -A 4 '"output_throughput"' | grep '"average"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    CORE_SECONDS=$(echo "$METRICS_JSON" | grep -A 3 '"cpu_metrics"' | grep '"core_seconds"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
     JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
@@ -406,6 +407,9 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log "Throughput Statistics ($NUM_SAMPLES samples):"
     log "  Input (measured):  $AVG_INPUT events/sec"
     log "  Output (measured): $AVG_OUTPUT events/sec"
+    log ""
+    log "CPU Usage:"
+    log "  Core-seconds: $CORE_SECONDS"
     log ""
     log "Full metrics JSON:"
     # Extract JSON (everything from first { to last })
@@ -441,16 +445,17 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
     echo "Query Results"
     echo "=========================================="
     echo ""
-    printf "%-15s %-30s %-30s\n" "Query" "Input Rate (generated)" "Output Throughput"
-    printf "%-15s %-30s %-30s\n" "-------------" "-----------------------------" "-----------------------------"
+    printf "%-10s %-20s %-20s %-15s\n" "Query" "Input Rate" "Output Throughput" "Core×Time"
+    printf "%-10s %-20s %-20s %-15s\n" "----------" "--------------------" "--------------------" "---------------"
 
     # Add each query result
     for metrics in "${ALL_METRICS[@]}"; do
         QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":\s*"nexmark-\K[^-]+' || echo "unknown")
         INPUT_AVG=$(echo "$metrics" | jq -r '.input_throughput.average // 0' 2>/dev/null || echo "0")
         OUTPUT_AVG=$(echo "$metrics" | jq -r '.output_throughput.average // 0' 2>/dev/null || echo "0")
+        CORE_SEC=$(echo "$metrics" | jq -r '.cpu_metrics.core_seconds // 0' 2>/dev/null || echo "0")
 
-        printf "%-15s %-30s %-30s\n" "$QUERY_NAME" "$INPUT_AVG events/sec" "$OUTPUT_AVG events/sec"
+        printf "%-10s %-20s %-20s %-15s\n" "$QUERY_NAME" "$INPUT_AVG events/sec" "$OUTPUT_AVG events/sec" "$CORE_SEC core-sec"
     done
 
     echo ""
