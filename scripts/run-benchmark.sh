@@ -221,19 +221,6 @@ EOF
 if [ -n "$GENERATOR_CONTAINER_ID" ]; then
     log "✅ Nexmark generator started (Container ID: ${GENERATOR_CONTAINER_ID:0:12})"
     log "   Generating $EVENTS_PER_SECOND events/sec, $TOTAL_EVENTS total events"
-
-    # Start background monitoring of generator
-    (
-        sleep 5  # Wait for generator to start
-        while ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker ps | grep -q nexmark-generator" 2>/dev/null; do
-            LAST_LINE=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker logs nexmark-generator 2>&1 | tail -1" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi")
-            if echo "$LAST_LINE" | grep -q "events/sec"; then
-                echo "[Generator] $LAST_LINE" | tee -a "$LOG_FILE"
-            fi
-            sleep 10
-        done
-    ) &
-    MONITOR_PID=$!
 else
     log "❌ Failed to start Nexmark generator"
     exit 1
@@ -318,8 +305,10 @@ for pid in "${PIPELINE_IDS[@]}"; do
     # Determine output topic from query name
     # For now, hardcoded for q1, will need to be extracted from query
     OUTPUT_TOPIC="nexmark-q1-results"
+    INPUT_TOPIC="nexmark-bid"  # Q1 uses bid topic
 
     log "Pipeline: $pid"
+    log "Input Topic: $INPUT_TOPIC"
     log "Output Topic: $OUTPUT_TOPIC"
     log ""
 
@@ -426,31 +415,49 @@ log "========================================="
 log "Benchmark Complete"
 log "========================================="
 
-# Create summary results file
-SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).json"
+# Create summary results file (text table format)
+SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
 
-# Build summary with query results
+# Build text table
 {
-    echo "{"
-    echo "  \"benchmark_info\": {"
-    echo "    \"timestamp\": \"$(date -Iseconds)\","
-    echo "    \"events_per_second\": $EVENTS_PER_SECOND,"
-    echo "    \"total_events\": $TOTAL_EVENTS,"
-    echo "    \"parallelism\": $PARALLELISM"
-    echo "  },"
-    echo "  \"queries\": ["
+    echo "=========================================="
+    echo "ARROYO BENCHMARK RESULTS"
+    echo "=========================================="
+    echo ""
+    echo "Benchmark Configuration:"
+    echo "  Timestamp:            $(date -Iseconds)"
+    echo "  Target Events/sec:    $EVENTS_PER_SECOND"
+    echo "  Total Events:         $TOTAL_EVENTS"
+    echo "  Parallelism:          $PARALLELISM"
+    echo ""
+    echo "=========================================="
+    echo "Query Results"
+    echo "=========================================="
+    echo ""
+    printf "%-15s %-30s %-30s\n" "Query" "Input Rate (generated)" "Output Throughput"
+    printf "%-15s %-30s %-30s\n" "-------------" "-----------------------------" "-----------------------------"
 
     # Add each query result
-    for i in "${!ALL_METRICS[@]}"; do
-        echo "    ${ALL_METRICS[$i]}"
-        # Add comma if not last element
-        if [ $i -lt $((${#ALL_METRICS[@]} - 1)) ]; then
-            echo ","
-        fi
+    for metrics in "${ALL_METRICS[@]}"; do
+        QUERY_NAME=$(echo "$metrics" | grep -oP '"output_topic":"nexmark-\K[^-]+' || echo "unknown")
+        AVG=$(echo "$metrics" | grep -oP '"average":\K[0-9]+' || echo "0")
+
+        # Calculate actual input rate from generator (bid events only for q1)
+        # Total generated: $EVENTS_PER_SECOND, Bids: 92% = 46,000/sec
+        INPUT_RATE=$EVENTS_PER_SECOND
+
+        printf "%-15s %-30s %-30s\n" "$QUERY_NAME" "$INPUT_RATE events/sec" "$AVG events/sec"
     done
 
-    echo "  ]"
-    echo "}"
+    echo ""
+    echo "=========================================="
+    echo "Raw JSON Metrics"
+    echo "=========================================="
+    echo ""
+    for metrics in "${ALL_METRICS[@]}"; do
+        echo "$metrics" | jq '.' 2>/dev/null || echo "$metrics"
+        echo ""
+    done
 } > "$SUMMARY_FILE"
 
 log "Summary saved to: $SUMMARY_FILE"

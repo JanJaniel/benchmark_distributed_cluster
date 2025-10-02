@@ -10,15 +10,16 @@ source "$SCRIPT_DIR/common.sh"
 
 echo "=== measure-arroyo.sh started ===" >&2
 
-# Usage: measure-arroyo.sh <pipeline_id> <output_topic> [steady_state_wait] [sample_duration] [num_samples]
+# Usage: measure-arroyo.sh <pipeline_id> <output_topic> <input_topic> [steady_state_wait] [sample_duration] [num_samples]
 PIPELINE_ID=$1
 OUTPUT_TOPIC=$2
-STEADY_STATE_WAIT=${3:-30}  # Default: wait 30s for steady state
-SAMPLE_DURATION=${4:-10}     # Default: sample for 10s each
-NUM_SAMPLES=${5:-10}         # Default: collect 10 samples
+INPUT_TOPIC=$3
+STEADY_STATE_WAIT=${4:-30}  # Default: wait 30s for steady state
+SAMPLE_DURATION=${5:-10}     # Default: sample for 10s each
+NUM_SAMPLES=${6:-10}         # Default: collect 10 samples
 
-if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ]; then
-    echo "Usage: $0 <pipeline_id> <output_topic> [steady_state_wait] [sample_duration] [num_samples]"
+if [ -z "$PIPELINE_ID" ] || [ -z "$OUTPUT_TOPIC" ] || [ -z "$INPUT_TOPIC" ]; then
+    echo "Usage: $0 <pipeline_id> <output_topic> <input_topic> [steady_state_wait] [sample_duration] [num_samples]"
     exit 1
 fi
 
