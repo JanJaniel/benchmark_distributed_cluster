@@ -86,10 +86,12 @@ START_TIME=$(date +%s)
 TOTAL_CPU_START=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    # Get CPU time in seconds from /proc/stat (sum of user + system time across all cores)
-    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_TIME}")
+    # Get CPU time in jiffies from /proc/stat (user + nice + system)
+    # Note: jiffies are typically 100 per second (USER_HZ), we'll convert to seconds at the end
+    CPU_JIFFIES=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print \$2+\$3+\$4}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_JIFFIES}")
 done
+echo "  Initial CPU jiffies: $TOTAL_CPU_START" >&2
 
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
@@ -177,15 +179,17 @@ END_TIME=$(date +%s)
 TOTAL_CPU_END=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print (\$2+\$3+\$4)/100}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_TIME}")
+    CPU_JIFFIES=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "awk '/^cpu / {print \$2+\$3+\$4}' /proc/stat" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_JIFFIES}")
 done
+echo "  Final CPU jiffies: $TOTAL_CPU_END" >&2
 
 # Calculate CPU metrics
 ELAPSED_TIME=$((END_TIME - START_TIME))
-CPU_TIME_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
+CPU_JIFFIES_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
+# Convert jiffies to seconds (USER_HZ = 100 typically)
 # Core-seconds = CPU time used across all nodes
-CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_TIME_USED}")
+CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_JIFFIES_USED / 100}")
 
 # Calculate statistics for output
 OUTPUT_SAMPLES_STR="${OUTPUT_SAMPLES[*]}"
