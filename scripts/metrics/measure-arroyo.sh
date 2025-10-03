@@ -80,10 +80,10 @@ if [ "$STEADY_STATE_WAIT" -gt 0 ]; then
     sleep "$STEADY_STATE_WAIT"
 fi
 
-# Capture start CPU time for Arroyo worker processes across all worker nodes
-echo "Capturing initial CPU metrics (Arroyo workers only)..." >&2
+# Start continuous CPU sampling in background
+echo "Starting continuous CPU sampling (every 5s during measurement)..." >&2
 START_TIME=$(date +%s)
-TOTAL_CPU_START=0
+CPU_SAMPLE_INTERVAL=5
 
 # First, check what containers exist on one worker
 WORKER_IP=$(get_worker_ip 1)
@@ -91,18 +91,28 @@ echo "  DEBUG: Checking Docker containers on worker 1 ($WORKER_IP)..." >&2
 CONTAINERS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "docker ps --format 'table {{.Names}}\t{{.Status}}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "none")
 echo "$CONTAINERS" >&2
 
-for i in $(seq 1 $NUM_WORKERS); do
-    WORKER_IP=$(get_worker_ip $i)
-    # Get CPU % from docker stats for arroyo-worker container (single sample, no streaming)
-    # Container name pattern: arroyo-worker-worker-${i}
-    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "docker stats --no-stream --format '{{.CPUPerc}}' arroyo-worker-worker-${i} 2>/dev/null | sed 's/%//'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    # If empty or error, default to 0
-    if [ -z "$CPU_PCT" ] || ! [[ "$CPU_PCT" =~ ^[0-9.]+$ ]]; then
-        CPU_PCT=0
-    fi
-    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_PCT}")
-done
-echo "  Initial Arroyo worker CPU %: ${TOTAL_CPU_START}" >&2
+# Background function to continuously sample CPU
+CPU_SAMPLES_FILE="/tmp/cpu_samples_$$.txt"
+rm -f "$CPU_SAMPLES_FILE"
+
+(
+    # Sample CPU every CPU_SAMPLE_INTERVAL seconds for the duration of measurement
+    END_SAMPLE_TIME=$((START_TIME + MEASUREMENT_DURATION))
+    while [ $(date +%s) -lt $END_SAMPLE_TIME ]; do
+        TOTAL_CPU=0
+        for i in $(seq 1 $NUM_WORKERS); do
+            WORKER_IP=$(get_worker_ip $i)
+            CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "docker stats --no-stream --format '{{.CPUPerc}}' arroyo-worker-worker-${i} 2>/dev/null | sed 's/%//'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+            if [ -z "$CPU_PCT" ] || ! [[ "$CPU_PCT" =~ ^[0-9.]+$ ]]; then
+                CPU_PCT=0
+            fi
+            TOTAL_CPU=$(awk "BEGIN {print $TOTAL_CPU + $CPU_PCT}")
+        done
+        echo "$TOTAL_CPU" >> "$CPU_SAMPLES_FILE"
+        sleep $CPU_SAMPLE_INTERVAL
+    done
+) &
+CPU_SAMPLER_PID=$!
 
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
@@ -172,29 +182,33 @@ NUM_SAMPLES=1
 
 echo "All samples collected successfully" >&2
 
-# Capture end CPU time for Arroyo worker processes across all worker nodes
-echo "Capturing final CPU metrics (Arroyo workers only)..." >&2
+# Wait for CPU sampler to finish and calculate average
+echo "Processing CPU samples..." >&2
+wait $CPU_SAMPLER_PID 2>/dev/null || true
 END_TIME=$(date +%s)
-TOTAL_CPU_END=0
-for i in $(seq 1 $NUM_WORKERS); do
-    WORKER_IP=$(get_worker_ip $i)
-    # Get CPU % from docker stats for arroyo-worker container
-    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "docker stats --no-stream --format '{{.CPUPerc}}' arroyo-worker-worker-${i} 2>/dev/null | sed 's/%//'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    # If empty or error, default to 0
-    if [ -z "$CPU_PCT" ] || ! [[ "$CPU_PCT" =~ ^[0-9.]+$ ]]; then
-        CPU_PCT=0
-    fi
-    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_PCT}")
-done
-echo "  Final Arroyo worker CPU %: ${TOTAL_CPU_END}" >&2
+ELAPSED_TIME=$((END_TIME - START_TIME))
+
+# Calculate average CPU from all samples
+if [ -f "$CPU_SAMPLES_FILE" ] && [ -s "$CPU_SAMPLES_FILE" ]; then
+    NUM_CPU_SAMPLES=$(wc -l < "$CPU_SAMPLES_FILE")
+    TOTAL_CPU_SUM=0
+    while read -r cpu_val; do
+        TOTAL_CPU_SUM=$(awk "BEGIN {printf \"%.2f\", $TOTAL_CPU_SUM + $cpu_val}")
+    done < "$CPU_SAMPLES_FILE"
+
+    AVG_CPU_PCT=$(awk "BEGIN {printf \"%.2f\", $TOTAL_CPU_SUM / $NUM_CPU_SAMPLES}")
+    echo "  Collected $NUM_CPU_SAMPLES CPU samples, average CPU %: ${AVG_CPU_PCT}" >&2
+
+    # Clean up
+    rm -f "$CPU_SAMPLES_FILE"
+else
+    echo "  WARNING: No CPU samples collected" >&2
+    AVG_CPU_PCT=0
+fi
 
 # Calculate CPU metrics
-# We have CPU % at start and end, need to convert to core-seconds
 # Average CPU % over the period × elapsed time = core-seconds
-ELAPSED_TIME=$((END_TIME - START_TIME))
-AVG_CPU_PCT=$(awk "BEGIN {print ($TOTAL_CPU_START + $TOTAL_CPU_END) / 2}")
-# core-seconds = (average CPU % / 100) × elapsed time × number of cores per worker × number of workers
-# Simplification: average CPU % already sums all workers, so just multiply by elapsed time / 100
+# core-seconds = (average CPU % / 100) × elapsed time
 CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", ($AVG_CPU_PCT * $ELAPSED_TIME) / 100}")
 
 # Calculate statistics for output
