@@ -84,14 +84,21 @@ fi
 echo "Capturing initial CPU metrics (Arroyo workers only)..." >&2
 START_TIME=$(date +%s)
 TOTAL_CPU_START=0
+
+# First, check what Arroyo processes actually exist on one worker
+WORKER_IP=$(get_worker_ip 1)
+echo "  DEBUG: Checking for Arroyo processes on worker 1 ($WORKER_IP)..." >&2
+ARROYO_PROCS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -i arroyo | grep -v grep" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "none")
+echo "  DEBUG: Arroyo processes found:" >&2
+echo "$ARROYO_PROCS" | head -3 >&2
+
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    # Get CPU time for arroyo-bin processes using ps
-    # ps returns cumulative CPU time in format HH:MM:SS or MM:SS
-    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps -C arroyo-bin -o cputime= 2>/dev/null | awk '{split(\$1,a,\":\"); if(length(a)==3) total += a[1]*3600 + a[2]*60 + a[3]; else total += a[1]*60 + a[2]} END {print total+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_TIME}")
+    # Get cumulative CPU % from ps aux for all Arroyo processes
+    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -E '(arroyo-worker|arroyo-bin|arroyo)' | grep -v grep | awk '{sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_PCT}")
 done
-echo "  Initial Arroyo worker CPU time: ${TOTAL_CPU_START}s" >&2
+echo "  Initial Arroyo worker CPU %: ${TOTAL_CPU_START}" >&2
 
 # Wait for output topic to exist (retry up to 60 seconds)
 echo "Waiting for output topic: $OUTPUT_TOPIC" >&2
@@ -167,16 +174,19 @@ END_TIME=$(date +%s)
 TOTAL_CPU_END=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    CPU_TIME=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps -C arroyo-bin -o cputime= 2>/dev/null | awk '{split(\$1,a,\":\"); if(length(a)==3) total += a[1]*3600 + a[2]*60 + a[3]; else total += a[1]*60 + a[2]} END {print total+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
-    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_TIME}")
+    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -E '(arroyo-worker|arroyo-bin|arroyo)' | grep -v grep | awk '{sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_PCT}")
 done
-echo "  Final Arroyo worker CPU time: ${TOTAL_CPU_END}s" >&2
+echo "  Final Arroyo worker CPU %: ${TOTAL_CPU_END}" >&2
 
 # Calculate CPU metrics
+# We have CPU % at start and end, need to convert to core-seconds
+# Average CPU % over the period × elapsed time = core-seconds
 ELAPSED_TIME=$((END_TIME - START_TIME))
-CPU_TIME_USED=$(awk "BEGIN {print $TOTAL_CPU_END - $TOTAL_CPU_START}")
-# Core-seconds = CPU time used by Arroyo workers across all nodes (already in seconds from ps)
-CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", $CPU_TIME_USED}")
+AVG_CPU_PCT=$(awk "BEGIN {print ($TOTAL_CPU_START + $TOTAL_CPU_END) / 2}")
+# core-seconds = (average CPU % / 100) × elapsed time × number of cores per worker × number of workers
+# Simplification: average CPU % already sums all workers, so just multiply by elapsed time / 100
+CORE_SECONDS=$(awk "BEGIN {printf \"%.0f\", ($AVG_CPU_PCT * $ELAPSED_TIME) / 100}")
 
 # Calculate statistics for output
 OUTPUT_SAMPLES_STR="${OUTPUT_SAMPLES[*]}"
