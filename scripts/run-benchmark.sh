@@ -413,10 +413,10 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     # Stop generator after measurement
     stop_generator
 
-    # Extract and display metrics
-    AVG_INPUT=$(echo "$METRICS_JSON" | grep '"input_throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    AVG_OUTPUT=$(echo "$METRICS_JSON" | grep '"output_throughput_events_per_sec"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
-    CORE_SECONDS=$(echo "$METRICS_JSON" | grep -A 3 '"cpu_metrics"' | grep '"core_seconds"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
+    # Extract and display metrics (support decimal values)
+    AVG_INPUT=$(echo "$METRICS_JSON" | grep '"input_throughput_events_per_sec"' | sed -n 's/.*: \([0-9.]*\).*/\1/p')
+    AVG_OUTPUT=$(echo "$METRICS_JSON" | grep '"output_throughput_events_per_sec"' | sed -n 's/.*: \([0-9.]*\).*/\1/p')
+    CORE_SECONDS=$(echo "$METRICS_JSON" | grep -A 3 '"cpu_metrics"' | grep '"core_seconds"' | sed -n 's/.*: \([0-9.]*\).*/\1/p')
     JOB_ID=$(echo "$METRICS_JSON" | grep '"job_id"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     JOB_STATE=$(echo "$METRICS_JSON" | grep '"job_state"' | sed -n 's/.*: "\([^"]*\)".*/\1/p')
     TASKS=$(echo "$METRICS_JSON" | grep '"tasks"' | sed -n 's/.*: \([0-9]*\).*/\1/p')
