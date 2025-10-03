@@ -52,14 +52,14 @@ calculate_average() {
     local sum=0
 
     for val in $samples; do
-        sum=$((sum + val))
+        sum=$(awk "BEGIN {printf \"%.2f\", $sum + $val}")
         count=$((count + 1))
     done
 
     if [ $count -eq 0 ]; then
         echo "0"
     else
-        echo $((sum / count))
+        awk "BEGIN {printf \"%.2f\", $sum / $count}"
     fi
 }
 
@@ -70,8 +70,14 @@ calculate_min() {
     local min=""
 
     for val in $samples; do
-        if [ -z "$min" ] || [ $val -lt $min ]; then
+        if [ -z "$min" ]; then
             min=$val
+        else
+            # Use awk for float comparison
+            local is_less=$(awk "BEGIN {print ($val < $min) ? 1 : 0}")
+            if [ "$is_less" -eq 1 ]; then
+                min=$val
+            fi
         fi
     done
 
@@ -85,8 +91,14 @@ calculate_max() {
     local max=""
 
     for val in $samples; do
-        if [ -z "$max" ] || [ $val -gt $max ]; then
+        if [ -z "$max" ]; then
             max=$val
+        else
+            # Use awk for float comparison
+            local is_greater=$(awk "BEGIN {print ($val > $max) ? 1 : 0}")
+            if [ "$is_greater" -eq 1 ]; then
+                max=$val
+            fi
         fi
     done
 
@@ -102,8 +114,8 @@ calculate_stddev() {
     local sum_sq_diff=0
 
     for val in $samples; do
-        local diff=$((val - avg))
-        sum_sq_diff=$((sum_sq_diff + diff * diff))
+        local diff=$(awk "BEGIN {printf \"%.4f\", $val - $avg}")
+        sum_sq_diff=$(awk "BEGIN {printf \"%.4f\", $sum_sq_diff + ($diff * $diff)}")
         count=$((count + 1))
     done
 
@@ -111,9 +123,9 @@ calculate_stddev() {
         echo "0"
     else
         # sqrt(sum_sq_diff / count)
-        local variance=$((sum_sq_diff / count))
-        # Simple integer square root using awk
-        local stddev=$(awk "BEGIN {print int(sqrt($variance))}")
+        local variance=$(awk "BEGIN {printf \"%.4f\", $sum_sq_diff / $count}")
+        # Calculate square root with proper precision
+        local stddev=$(awk "BEGIN {printf \"%.2f\", sqrt($variance)}")
         echo "$stddev"
     fi
 }

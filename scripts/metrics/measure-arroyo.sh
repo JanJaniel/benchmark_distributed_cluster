@@ -85,17 +85,18 @@ echo "Capturing initial CPU metrics (Arroyo workers only)..." >&2
 START_TIME=$(date +%s)
 TOTAL_CPU_START=0
 
-# First, check what Arroyo processes actually exist on one worker
+# First, check what Arroyo processes actually exist on one worker and show top CPU consumers
 WORKER_IP=$(get_worker_ip 1)
-echo "  DEBUG: Checking for Arroyo processes on worker 1 ($WORKER_IP)..." >&2
-ARROYO_PROCS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -i arroyo | grep -v grep" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "none")
-echo "  DEBUG: Arroyo processes found:" >&2
-echo "$ARROYO_PROCS" | head -3 >&2
+echo "  DEBUG: Checking for processes on worker 1 ($WORKER_IP)..." >&2
+ALL_PROCS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux --sort=-%cpu | head -15" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "none")
+echo "  DEBUG: Top 15 CPU processes:" >&2
+echo "$ALL_PROCS" | head -15 >&2
 
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    # Get cumulative CPU % from ps aux for all Arroyo processes
-    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -E '(arroyo-worker|arroyo-bin|arroyo)' | grep -v grep | awk '{sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    # Get cumulative CPU % from ps aux for all processes containing 'arroyo' in command (excluding grep)
+    # Only count processes with CPU > 0.0%
+    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep arroyo | grep -v grep | awk '\$3 > 0 {sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
     TOTAL_CPU_START=$(awk "BEGIN {print $TOTAL_CPU_START + $CPU_PCT}")
 done
 echo "  Initial Arroyo worker CPU %: ${TOTAL_CPU_START}" >&2
@@ -148,11 +149,11 @@ for pid in "${INPUT_PIDS[@]}"; do
 done
 wait $OUTPUT_PID
 
-# Sum up all input topics
+# Sum up all input topics (use awk for float support)
 TOTAL_INPUT=0
 for idx in "${!INPUT_TOPICS[@]}"; do
     TOPIC_THROUGHPUT=$(cat /tmp/input_${idx}_$$.txt)
-    TOTAL_INPUT=$((TOTAL_INPUT + TOPIC_THROUGHPUT))
+    TOTAL_INPUT=$(awk "BEGIN {printf \"%.2f\", $TOTAL_INPUT + $TOPIC_THROUGHPUT}")
 done
 
 OUTPUT_THROUGHPUT=$(cat /tmp/output_$$.txt)
@@ -174,7 +175,8 @@ END_TIME=$(date +%s)
 TOTAL_CPU_END=0
 for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
-    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep -E '(arroyo-worker|arroyo-bin|arroyo)' | grep -v grep | awk '{sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
+    # Only count processes with CPU > 0.0%
+    CPU_PCT=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} "ps aux | grep arroyo | grep -v grep | awk '\$3 > 0 {sum+=\$3} END {print sum+0}'" 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law\|exact distribution" || echo "0")
     TOTAL_CPU_END=$(awk "BEGIN {print $TOTAL_CPU_END + $CPU_PCT}")
 done
 echo "  Final Arroyo worker CPU %: ${TOTAL_CPU_END}" >&2
