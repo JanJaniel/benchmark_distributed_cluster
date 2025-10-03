@@ -1,13 +1,18 @@
-# Distributed Arroyo Cluster on Raspberry Pi
+# Distributed Stream Processing Benchmark on Raspberry Pi
 
-This folder contains the complete implementation for running a truly distributed Arroyo stream processing cluster across 10 Raspberry Pis.
+This repository contains a complete benchmarking infrastructure for comparing distributed stream processing systems (Apache Arroyo and Apache Flink) on a Raspberry Pi cluster.
 
 ## Architecture Overview
 
-- **Pi1 (Controller)**: Runs Arroyo controller, Kafka, MinIO, and data generator
-- **Pi2-Pi10 (Workers)**: Run Arroyo workers that process queries in parallel
-- **Storage**: MinIO provides S3-compatible storage for checkpoints
+### Shared Infrastructure
+- **Pi1 (Controller)**: Runs Kafka, data generator, and either Arroyo controller or Flink JobManager
+- **Pi2-Pi10 (Workers)**: Run either Arroyo workers or Flink TaskManagers
+- **Storage**: MinIO provides S3-compatible storage for Arroyo checkpoints
 - **Messaging**: Kafka with 9 partitions per topic for parallel consumption
+
+### Supported Systems
+- **Apache Arroyo v0.11.0**: Rust-based streaming engine with SQL support
+- **Apache Flink 1.18.1**: JVM-based streaming engine with Table API
 
 ## Prerequisites
 
@@ -24,33 +29,59 @@ cd scripts
 ./setup-ssh-keys.sh
 ```
 
-### 2. Deploy Cluster
+### 2. Deploy System (Choose One)
+
+**For Apache Arroyo:**
 ```bash
-./setup-cluster.sh
+./scripts/setup-cluster.sh
+```
+
+**For Apache Flink:**
+```bash
+./scripts/setup-flink.sh
 ```
 
 This will:
-- Install Docker on all Pis
-- Copy project files to all nodes
 - Build Docker images
-- Start all services
-- Create Kafka topics
+- Distribute images to all nodes
+- Start controller and worker containers
+- Create Kafka topics (Arroyo only)
+- Verify cluster readiness
 
-### 3. Test Query Submission
+### 3. Run Benchmark
+
+**Arroyo:**
 ```bash
-# Test Q1 first
-./scripts/test-q1.sh
-
-# Then run full benchmark
-./run-benchmark.sh --events-per-second 50000 --total-events 10000000 --queries q1
+./scripts/run-benchmark.sh --system arroyo
 ```
 
-### 4. Monitor Performance
+**Flink:**
 ```bash
-# Check cluster status
-./scripts/check-arroyo-api.sh
+./scripts/run-benchmark.sh --system flink
+```
 
-# Note: metrics-collector is not yet implemented
+**Optional parameters:**
+```bash
+./scripts/run-benchmark.sh --system flink \
+  --events-per-second 10000 \
+  --total-events 10000000 \
+  --queries q1,q2,q3,q4,q5,q7,q8 \
+  --parallelism 9
+```
+
+### 4. View Results
+Results are saved in `benchmark_results_YYYYMMDD_HHMMSS.txt`
+
+### 5. Teardown
+
+**Arroyo:**
+```bash
+./scripts/teardown-cluster.sh
+```
+
+**Flink:**
+```bash
+./scripts/teardown-flink.sh
 ```
 
 ## Detailed Setup

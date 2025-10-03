@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  flink-jobmanager:
+    image: flink-nexmark:latest
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"  # Flink Web UI
+      - "6123:6123"  # Flink RPC
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        jobmanager.bind-host: 0.0.0.0
+        rest.address: 0.0.0.0
+        rest.bind-address: 0.0.0.0
+        parallelism.default: 9
+        taskmanager.numberOfTaskSlots: 4
+      - KAFKA_BOOTSTRAP_SERVERS=192.168.2.70:9094
+    network_mode: host
+    restart: unless-stopped

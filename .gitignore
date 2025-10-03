@@ -1,0 +1,30 @@
+# Flink reference folders (for orientation only, not part of benchmark)
+# These are from other repos - use as reference but don't commit
+/flink-java
+/flink_project
+/flink_from other repo
+
+# Our actual Flink implementation (flink-queries/) WILL be committed to git
+
+# Build artifacts (Maven builds these, don't commit them)
+*.jar
+*.class
+flink-queries/target/
+*.log
+
+# Benchmark results
+benchmark_results_*.txt
+metrics_*.json
+
+# Temporary files
+/tmp
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

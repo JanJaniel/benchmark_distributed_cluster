@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run distributed benchmark on Arroyo cluster
+# Run distributed benchmark on Arroyo or Flink cluster
 
 set -e
 
@@ -30,10 +30,15 @@ EVENTS_PER_SECOND=10000
 TOTAL_EVENTS=10000000  # High enough even with slow measurements (500s × 10000 = 5M events per query, using 10M for safety)
 QUERIES="q1,q2,q3,q4,q5,q7,q8"
 PARALLELISM=9
+SYSTEM="arroyo"  # Default to arroyo for backward compatibility
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --system)
+            SYSTEM="$2"
+            shift 2
+            ;;
         --events-per-second)
             EVENTS_PER_SECOND="$2"
             shift 2
@@ -52,11 +57,17 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--events-per-second N] [--total-events N] [--queries q1,q2,...] [--parallelism N]"
+            echo "Usage: $0 [--system arroyo|flink] [--events-per-second N] [--total-events N] [--queries q1,q2,...] [--parallelism N]"
             exit 1
             ;;
     esac
 done
+
+# Validate system parameter
+if [ "$SYSTEM" != "arroyo" ] && [ "$SYSTEM" != "flink" ]; then
+    echo "ERROR: Invalid system '$SYSTEM'. Must be 'arroyo' or 'flink'"
+    exit 1
+fi
 
 # Generate timestamp for log and metrics files
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -88,9 +99,10 @@ EOF
 
 log "✅ Old containers cleaned up"
 
-# Delete old pipelines
-log "Cleaning up old pipelines..."
-PIPELINE_COUNT=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -o '"id"' | wc -l)
+# Delete old pipelines/jobs (system-specific)
+if [ "$SYSTEM" = "arroyo" ]; then
+    log "Cleaning up old Arroyo pipelines..."
+    PIPELINE_COUNT=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -o '"id"' | wc -l)
 if [ "$PIPELINE_COUNT" -gt 0 ]; then
     log "Found $PIPELINE_COUNT old pipeline(s), deleting..."
     PIPELINE_IDS=$(curl -s http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines | grep -oP '"id":"[^"]*"' | cut -d'"' -f4)
@@ -136,10 +148,27 @@ if [ "$PIPELINE_COUNT" -gt 0 ]; then
 else
     log "✅ No old pipelines to clean up"
 fi
+elif [ "$SYSTEM" = "flink" ]; then
+    log "Cleaning up old Flink jobs..."
+    # Cancel any running Flink jobs
+    JOB_IDS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
+        "docker exec flink-jobmanager flink list 2>/dev/null | grep -oP '^[a-f0-9]{32}'" || echo "")
+    if [ -n "$JOB_IDS" ]; then
+        log "Found running Flink jobs, canceling..."
+        for job_id in $JOB_IDS; do
+            log "  Canceling job: $job_id"
+            ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
+                "docker exec flink-jobmanager flink cancel $job_id" >/dev/null 2>&1 || true
+        done
+        log "✅ Old jobs canceled"
+    else
+        log "✅ No old jobs to clean up"
+    fi
+fi
 
 log ""
 log "========================================="
-log "Running Distributed Benchmark"
+log "Running Distributed Benchmark - ${SYSTEM^^}"
 log "========================================="
 log "Timestamp: $(date)"
 log "Events per second: $EVENTS_PER_SECOND"
@@ -353,15 +382,19 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     fi
     log ""
 
-    # Submit query
+    # Submit query (system-specific)
     log "Submitting query: $QUERY_NAME"
-    if ! submit_query "$QUERY_NAME"; then
-        log "⚠ Skipping query $QUERY_NAME due to submission failure"
-        stop_generator
-        continue
+    if [ "$SYSTEM" = "arroyo" ]; then
+        if ! submit_query "$QUERY_NAME"; then
+            log "⚠ Skipping query $QUERY_NAME due to submission failure"
+            stop_generator
+            continue
+        fi
+        pid="$pipeline_id"
+    elif [ "$SYSTEM" = "flink" ]; then
+        # For Flink, we don't pre-submit, the measurement script does it
+        pid="$QUERY_NAME"
     fi
-
-    pid="$pipeline_id"
 
     # Determine input and output topics based on query
     OUTPUT_TOPIC="nexmark-${QUERY_NAME}-results"
@@ -372,8 +405,8 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log "Output Topic: $OUTPUT_TOPIC"
     log ""
 
-    # Run Arroyo metrics measurement with time-based sampling
-    # Parameters: pipeline_id, output_topic, input_topics, steady_state_wait, sample_interval, measurement_duration
+    # Run metrics measurement (system-specific)
+    # Parameters: pipeline_id/query, output_topic, input_topics, steady_state_wait, sample_interval, measurement_duration
     log "Running measurement script..."
     log "  Parameters: pid=$pid, input=$INPUT_TOPIC, output=$OUTPUT_TOPIC, steady_state=30s, interval=10s, duration=120s"
     log ""
@@ -384,9 +417,14 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
     log "Starting measurement (this will take ~3 minutes)..."
     log "========================================"
 
-    # Run the script, showing output in real-time
-    bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 120 2>&1 | tee /tmp/metrics_output.txt
-    MEASURE_EXIT_CODE=${PIPESTATUS[0]}
+    # Run the appropriate measurement script
+    if [ "$SYSTEM" = "arroyo" ]; then
+        bash ${SCRIPT_DIR}/metrics/measure-arroyo.sh "$pid" "$OUTPUT_TOPIC" "$INPUT_TOPIC" 30 10 120 2>&1 | tee /tmp/metrics_output.txt
+        MEASURE_EXIT_CODE=${PIPESTATUS[0]}
+    elif [ "$SYSTEM" = "flink" ]; then
+        bash ${SCRIPT_DIR}/metrics/measure-flink.sh "$pid" "$INPUT_TOPIC" "$OUTPUT_TOPIC" 30 10 120 2>&1 | tee /tmp/metrics_output.txt
+        MEASURE_EXIT_CODE=${PIPESTATUS[0]}
+    fi
 
     log "========================================"
     log "Measurement completed with exit code: $MEASURE_EXIT_CODE"
@@ -403,12 +441,17 @@ for QUERY_NAME in "${QUERY_ARRAY[@]}"; do
         log "  $line"
     done
 
-    # Stop the pipeline after measurement
-    log "Stopping pipeline $pid..."
-    curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" \
-        -H "Content-Type: application/json" \
-        -d '{"stop": "immediate"}' >/dev/null
-    log "✅ Pipeline stop requested"
+    # Stop the pipeline/job after measurement (system-specific)
+    if [ "$SYSTEM" = "arroyo" ]; then
+        log "Stopping pipeline $pid..."
+        curl -s -X PATCH "http://${CONTROLLER_IP}:${ARROYO_API_PORT}/api/v1/pipelines/$pid" \
+            -H "Content-Type: application/json" \
+            -d '{"stop": "immediate"}' >/dev/null
+        log "✅ Pipeline stop requested"
+    elif [ "$SYSTEM" = "flink" ]; then
+        # Flink job is already canceled by measure-flink.sh
+        log "✅ Flink job stopped by measurement script"
+    fi
 
     # Stop generator after measurement
     stop_generator
@@ -459,10 +502,11 @@ SUMMARY_FILE="$PROJECT_ROOT/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
 # Build text table
 {
     echo "=========================================="
-    echo "ARROYO BENCHMARK RESULTS"
+    echo "${SYSTEM^^} BENCHMARK RESULTS"
     echo "=========================================="
     echo ""
     echo "Benchmark Configuration:"
+    echo "  System:               ${SYSTEM}"
     echo "  Timestamp:            $(date -Iseconds)"
     echo "  Target Events/sec:    $EVENTS_PER_SECOND"
     echo "  Total Events:         $TOTAL_EVENTS"

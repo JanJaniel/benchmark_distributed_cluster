@@ -1,6 +1,8 @@
 # Distributed Cluster Architecture
 
-## System Overview
+**Note**: This architecture applies to both Arroyo and Flink systems. System-specific differences are noted below.
+
+## System Overview (Arroyo shown, Flink similar)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -180,7 +182,62 @@ Workers: 1-4 cores based on query complexity
 
 ## Implementation Notes
 
-- **Controller Image**: Uses custom `arroyo-pi:latest` ARM64 image
-- **Worker Images**: Use `arroyo-pi:latest` ARM64 image
+### Arroyo-Specific
+- **Controller Image**: `arroyo-pi:latest` ARM64 image
+- **Worker Images**: `arroyo-pi:latest` ARM64 image
 - **API Port**: 8001 (not 8000) for all API calls
 - **No Web UI**: In distributed mode, only API is available
+- **Container Names**: `arroyo-controller`, `arroyo-worker-worker-1` to `arroyo-worker-worker-9`
+
+### Flink-Specific
+- **Controller Image**: `flink-nexmark:latest` ARM64 image (includes Maven-built JAR)
+- **Worker Images**: `flink-nexmark:latest` ARM64 image
+- **Web UI Port**: 8081 (Flink Dashboard)
+- **Container Names**: `flink-jobmanager`, `flink-worker-1` to `flink-worker-9`
+- **TaskManager Slots**: 4 slots per worker (36 total)
+- **Job Submission**: Via `flink run -d -c <class> nexmark.jar`
+
+### Shared Infrastructure
+- **Kafka**: 192.168.2.70:9094 (used by both systems)
+- **Generator**: Same Nexmark generator for both systems
+- **Topics**: Same Kafka topics (nexmark-bid, nexmark-person, nexmark-auction)
+- **Output Topics**: nexmark-q{1,2,3,4,5,7,8}-results
+
+## System Comparison
+
+| Aspect | Arroyo | Flink |
+|--------|--------|-------|
+| **Language** | Rust | Java/Scala |
+| **API** | SQL via REST | SQL + DataStream via JAR |
+| **Deployment** | REST API creates pipelines | CLI submits JARs |
+| **Web UI** | Not available in distributed mode | Full UI at :8081 |
+| **State Backend** | MinIO (S3) | In-memory (for benchmarks) |
+| **Parallelism** | 9 workers | 36 slots (4 per worker) |
+| **Resource Usage** | Lower memory footprint | Higher (JVM overhead) |
+
+## Switching Between Systems
+
+**Teardown current system first:**
+```bash
+# Stop Arroyo
+./scripts/teardown-cluster.sh
+
+# OR stop Flink
+./scripts/teardown-flink.sh
+```
+
+**Deploy new system:**
+```bash
+# Start Arroyo
+./scripts/setup-cluster.sh
+
+# OR start Flink
+./scripts/setup-flink.sh
+```
+
+**Run benchmark:**
+```bash
+./scripts/run-benchmark.sh --system arroyo
+# OR
+./scripts/run-benchmark.sh --system flink
+```

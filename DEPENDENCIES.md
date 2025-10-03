@@ -38,11 +38,15 @@ That's it! Everything else runs inside containers.
 - **Memory**: 1-2GB per node
 - **Purpose**: Distributed stream processing
 
-#### Apache Flink (Future)
-- **Image**: flink:1.18.1-java11
-- **Dependencies**: Java 11 (included in image)
+#### Apache Flink
+- **Version**: 1.18.1
+- **Base Image**: flink:1.18.1-scala_2.12
+- **Build Dependencies** (in Dockerfile):
+  - Maven 3.8 + OpenJDK 11 (build stage)
+  - Java Libraries: Flink SQL, Kafka connector, Jackson JSON
+- **Runtime Dependencies**: Java 11 (included in flink image)
 - **Memory**: 1.6GB per node
-- **Purpose**: Alternative stream processor
+- **Purpose**: Alternative stream processor for comparison
 
 ### 3. Data Generation
 
@@ -59,14 +63,22 @@ That's it! Everything else runs inside containers.
 
 ## Network Requirements
 
-### Ports Used
+### Ports Used (System-Dependent)
+
+**Shared (both systems):**
 - **9094**: Kafka external listener
 - **9000**: MinIO S3 API
 - **9001**: MinIO Console
+- **2181**: Zookeeper (internal)
+
+**Arroyo-specific:**
 - **8000**: Arroyo Web UI
 - **8001**: Arroyo HTTP API
 - **9190**: Arroyo gRPC (worker communication)
-- **2181**: Zookeeper (internal)
+
+**Flink-specific:**
+- **8081**: Flink Web Dashboard
+- **6123**: Flink RPC (JobManager communication)
 
 ### Network Configuration
 - Static IP addresses (192.168.2.42-51)
@@ -114,8 +126,12 @@ The entire deployment requires only:
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER
 
-# 2. Run setup script (from Pi1)
+# 2. Choose and deploy system (from Pi1)
+# For Arroyo:
 ./scripts/setup-cluster.sh
+
+# OR for Flink:
+./scripts/setup-flink.sh
 ```
 
 ## Cleanup
@@ -124,7 +140,11 @@ Complete removal leaves no trace:
 
 ```bash
 # Remove all containers and data
+# For Arroyo:
 ./scripts/teardown-cluster.sh
+
+# OR for Flink:
+./scripts/teardown-flink.sh
 
 # Optional: Remove Docker
 sudo apt-get purge docker-ce docker-ce-cli containerd.io

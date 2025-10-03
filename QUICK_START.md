@@ -1,6 +1,10 @@
 # Quick Start - Die wichtigsten Befehle
 
-## Schritt 1: Auf Controller (b1pc10) einloggen
+**Hinweis**: Diese Anleitung funktioniert für Arroyo. Für Flink siehe unten.
+
+## Arroyo Setup
+
+### Schritt 1: Auf Controller (b1pc10) einloggen
 ```bash
 ssh picocluster@192.168.2.70
 cd ~/Bachelorarbeit/benchmark_distributed_cluster
@@ -95,4 +99,77 @@ ssh picocluster@192.168.2.71 "docker logs -f arroyo-worker-worker-1"
 ```bash
 cd ~/Bachelorarbeit/benchmark_distributed_cluster
 ./scripts/teardown-cluster.sh
+```
+
+---
+
+## Flink Setup (Alternative zu Arroyo)
+
+### Schritt 1-4: Identisch wie bei Arroyo
+Siehe oben für SSH Keys, Docker Installation, etc.
+
+### Schritt 5: Flink Cluster starten
+```bash
+cd ~/Bachelorarbeit/benchmark_distributed_cluster
+./scripts/setup-flink.sh
+```
+
+Dies wird:
+- Flink Docker Image bauen (Maven build, ~5-10 min)
+- Image auf alle Nodes verteilen
+- Flink JobManager auf Controller starten
+- 9 Flink TaskManagers auf Workers starten
+- Cluster-Status prüfen
+
+### Schritt 6: Benchmark ausführen
+```bash
+cd ~/Bachelorarbeit/benchmark_distributed_cluster
+./scripts/run-benchmark.sh --system flink
+```
+
+### Wichtige URLs (Flink)
+- Flink Web UI: http://192.168.2.70:8081
+- Kafka UI: http://192.168.2.70:8080 (falls installiert)
+
+### Status prüfen (Flink)
+```bash
+# Flink Cluster Status via API
+curl http://192.168.2.70:8081/taskmanagers | jq
+
+# JobManager Logs
+ssh picocluster@192.168.2.70 "docker logs -f flink-jobmanager"
+
+# TaskManager Logs (z.B. Worker 1)
+ssh picocluster@192.168.2.71 "docker logs -f flink-worker-1"
+```
+
+### Flink stoppen
+```bash
+cd ~/Bachelorarbeit/benchmark_distributed_cluster
+./scripts/teardown-flink.sh
+```
+
+---
+
+## System wechseln
+
+**Arroyo → Flink:**
+```bash
+./scripts/teardown-cluster.sh  # Arroyo stoppen
+./scripts/setup-flink.sh        # Flink starten
+```
+
+**Flink → Arroyo:**
+```bash
+./scripts/teardown-flink.sh     # Flink stoppen
+./scripts/setup-cluster.sh      # Arroyo starten
+```
+
+**Benchmark ausführen:**
+```bash
+# Arroyo
+./scripts/run-benchmark.sh --system arroyo
+
+# Flink
+./scripts/run-benchmark.sh --system flink
 ```
