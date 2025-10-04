@@ -62,16 +62,13 @@ EOF
     done
 fi
 
-# Optional: Remove project files
-read -p "Remove project files from all nodes? (y/n): " -n 1 -r
+# Optional: Remove project files from workers only (keep on controller)
+read -p "Remove project files from worker nodes? (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Removing project files..."
-    
-    # Remove from controller
-    ssh ${CLUSTER_USER}@${CONTROLLER_IP} "rm -rf ~/benchmark_distributed_cluster"
-    
-    # Remove from workers
+    echo "Removing project files from workers..."
+
+    # Remove from workers only
     exec_on_workers "rm -rf ~/benchmark_distributed_cluster"
 fi
 
