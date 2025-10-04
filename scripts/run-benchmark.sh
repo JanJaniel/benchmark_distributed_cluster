@@ -252,7 +252,11 @@ trap 'cleanup' TERM
 
 # Function to start data generator
 start_generator() {
-    log "Starting Nexmark data generator (with ISO timestamps)..."
+    if [ "$SYSTEM" = "arroyo" ]; then
+        log "Starting Nexmark data generator (ISO timestamp format for Arroyo)..."
+    else
+        log "Starting Nexmark data generator (numeric timestamp format for Flink)..."
+    fi
     GENERATOR_CONTAINER_ID=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} << EOF 2>&1 | grep -v "^Linux\|^Debian\|programs included\|Wi-Fi is currently\|The programs\|ABSOLUTELY NO WARRANTY\|permitted by law"
 cd ~/benchmark_distributed_cluster
 docker run -d --rm \
@@ -263,7 +267,7 @@ docker run -d --rm \
     -e TOTAL_EVENTS=${TOTAL_EVENTS} \
     -v \$(pwd)/nexmark-generator-deterministic.py:/app/generator/nexmark-generator-deterministic.py:ro \
     nexmark-generator:latest \
-    python /app/generator/nexmark-generator-deterministic.py --iso
+    python /app/generator/nexmark-generator-deterministic.py \$( [ "$SYSTEM" = "arroyo" ] && echo "--iso" || echo "" )
 EOF
 )
 
