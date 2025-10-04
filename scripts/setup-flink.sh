@@ -43,19 +43,21 @@ echo ""
 
 echo "Distributing Flink image to all nodes..."
 
-# Copy and load on controller first
-echo "  Copying to controller ($CONTROLLER_IP)..."
-scp -o LogLevel=ERROR /tmp/flink-nexmark.tar.gz ${CLUSTER_USER}@${CONTROLLER_IP}:/tmp/
-ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "docker load < /tmp/flink-nexmark.tar.gz && rm /tmp/flink-nexmark.tar.gz"
+# Load on controller (image is already here since we built it locally)
+echo "  Loading image on controller..."
+docker load < /tmp/flink-nexmark.tar.gz
 
 # Copy and load on workers
 for i in $(seq 1 $NUM_WORKERS); do
     NODE_IP=$(get_worker_ip $i)
-    echo "  Copying to worker $i ($NODE_IP)..."
+    echo "  [$i/$NUM_WORKERS] Copying to worker $i ($NODE_IP)..."
     scp -o LogLevel=ERROR /tmp/flink-nexmark.tar.gz ${CLUSTER_USER}@${NODE_IP}:/tmp/
+    echo "  [$i/$NUM_WORKERS] Loading image on worker $i..."
     ssh -o LogLevel=ERROR ${CLUSTER_USER}@${NODE_IP} "docker load < /tmp/flink-nexmark.tar.gz && rm /tmp/flink-nexmark.tar.gz"
+    echo "  [$i/$NUM_WORKERS] ✅ Worker $i complete"
 done
 
+# Clean up local tarball after ALL nodes are done
 rm /tmp/flink-nexmark.tar.gz
 echo "✅ Image distributed to all nodes"
 echo ""
