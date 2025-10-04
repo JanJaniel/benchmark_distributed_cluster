@@ -164,6 +164,21 @@ elif [ "$SYSTEM" = "flink" ]; then
     else
         log "✅ No old jobs to clean up"
     fi
+
+    # Delete old output topics to prevent measurement pollution from previous runs
+    log "Cleaning up old output topics..."
+    OUTPUT_TOPICS=$(ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
+        "docker exec kafka kafka-topics --bootstrap-server localhost:19092 --list 2>/dev/null | grep 'nexmark-q[0-9]-results'" || echo "")
+    if [ -n "$OUTPUT_TOPICS" ]; then
+        for topic in $OUTPUT_TOPICS; do
+            log "  Deleting topic: $topic"
+            ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
+                "docker exec kafka kafka-topics --bootstrap-server localhost:19092 --delete --topic $topic 2>/dev/null" >/dev/null 2>&1 || true
+        done
+        log "✅ Old output topics deleted"
+    else
+        log "✅ No old output topics to clean up"
+    fi
 fi
 
 log ""

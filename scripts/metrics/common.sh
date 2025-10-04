@@ -23,9 +23,8 @@ measure_topic_throughput() {
     sleep "$duration"
     local after=$(get_kafka_topic_offset "$broker" "$topic")
 
-    local diff=$((after - before))
-    # Use awk for floating point division to preserve decimals
-    local throughput=$(awk "BEGIN {printf \"%.2f\", $diff / $duration}")
+    # Use awk for all arithmetic to handle large numbers and decimals
+    local throughput=$(awk "BEGIN {printf \"%.2f\", ($after - $before) / $duration}")
 
     echo "$throughput"
 }
