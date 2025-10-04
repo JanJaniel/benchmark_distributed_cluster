@@ -6,17 +6,15 @@ services:
     container_name: flink-jobmanager
     hostname: flink-jobmanager
     command: jobmanager
-    ports:
-      - "8081:8081"  # Flink Web UI
-      - "6123:6123"  # Flink RPC
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.address: 192.168.2.70
         jobmanager.rpc.port: 6123
         jobmanager.bind-host: 0.0.0.0
-        rest.address: 0.0.0.0
+        rest.address: 192.168.2.70
         rest.bind-address: 0.0.0.0
+        rest.port: 8081
         parallelism.default: 9
         taskmanager.numberOfTaskSlots: 4
       - KAFKA_BOOTSTRAP_SERVERS=192.168.2.70:9094

@@ -111,14 +111,50 @@ sleep 15
 
 # Check cluster status
 echo "Checking Flink cluster status..."
+echo ""
+echo "  Testing JobManager REST API..."
+REST_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" "http://${CONTROLLER_IP}:8081/overview" 2>&1)
+HTTP_CODE=$(echo "$REST_RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
+
+if [ "$HTTP_CODE" = "200" ]; then
+    echo "  ✅ JobManager REST API accessible at http://${CONTROLLER_IP}:8081"
+else
+    echo "  ❌ JobManager REST API not responding (HTTP $HTTP_CODE)"
+    echo "  Debug: Check JobManager logs with: ssh ${CLUSTER_USER}@${CONTROLLER_IP} 'docker logs flink-jobmanager'"
+fi
+echo ""
+
+echo "  Testing JobManager RPC port..."
+if nc -z -w 2 ${CONTROLLER_IP} 6123 2>/dev/null; then
+    echo "  ✅ JobManager RPC port 6123 is open"
+else
+    echo "  ❌ JobManager RPC port 6123 not accessible"
+    echo "  Debug: Check if JobManager is running: ssh ${CLUSTER_USER}@${CONTROLLER_IP} 'docker ps | grep flink-jobmanager'"
+fi
+echo ""
+
+echo "  Querying registered TaskManagers..."
 TASKMANAGERS=$(curl -s "http://${CONTROLLER_IP}:8081/taskmanagers" | grep -o '"id"' | wc -l || echo "0")
 echo "  TaskManagers registered: $TASKMANAGERS / $NUM_WORKERS"
+echo ""
 
 if [ "$TASKMANAGERS" -eq "$NUM_WORKERS" ]; then
     echo "✅ Flink cluster is ready!"
 else
     echo "⚠️  Warning: Expected $NUM_WORKERS TaskManagers but found $TASKMANAGERS"
-    echo "   Check logs: ssh ${CLUSTER_USER}@<worker_ip> 'docker logs flink-worker-<id>'"
+    echo ""
+    echo "Debugging tips:"
+    echo "  1. Check JobManager logs:"
+    echo "     ssh ${CLUSTER_USER}@${CONTROLLER_IP} 'docker logs flink-jobmanager | tail -50'"
+    echo ""
+    echo "  2. Check a worker's logs (replace 1 with worker number):"
+    echo "     ssh ${CLUSTER_USER}@192.168.2.71 'docker logs flink-worker-1 | tail -50'"
+    echo ""
+    echo "  3. Verify network connectivity from worker to JobManager:"
+    echo "     ssh ${CLUSTER_USER}@192.168.2.71 'nc -zv 192.168.2.70 6123'"
+    echo ""
+    echo "  4. Check if containers are running:"
+    echo "     ssh ${CLUSTER_USER}@${CONTROLLER_IP} 'docker ps | grep flink'"
 fi
 
 echo ""
