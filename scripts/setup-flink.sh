@@ -86,7 +86,7 @@ echo ""
 # Start Flink JobManager on controller
 echo "Starting Flink JobManager on controller..."
 ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
-    "cd ~/flink-deploy && docker-compose up -d"
+    "cd ~/flink-deploy && docker compose up -d"
 echo "✅ JobManager started"
 echo ""
 
@@ -100,7 +100,7 @@ for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
     echo "  Starting TaskManager on worker $i ($WORKER_IP)..."
     ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} \
-        "cd ~/flink-deploy && NODE_ID=$i WORKER_IP=$WORKER_IP docker-compose up -d"
+        "cd ~/flink-deploy && NODE_ID=$i WORKER_IP=$WORKER_IP docker compose up -d"
 done
 echo "✅ All TaskManagers started"
 echo ""

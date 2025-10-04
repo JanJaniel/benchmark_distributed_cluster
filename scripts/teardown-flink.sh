@@ -15,7 +15,7 @@ for i in $(seq 1 $NUM_WORKERS); do
     WORKER_IP=$(get_worker_ip $i)
     echo "  Stopping TaskManager on worker $i ($WORKER_IP)..."
     ssh -o LogLevel=ERROR ${CLUSTER_USER}@${WORKER_IP} \
-        "cd ~/flink-deploy && docker-compose down 2>/dev/null || true"
+        "cd ~/flink-deploy && docker compose down 2>/dev/null || true"
 done
 echo "✅ All TaskManagers stopped"
 echo ""
@@ -23,7 +23,7 @@ echo ""
 # Stop JobManager on controller
 echo "Stopping Flink JobManager on controller..."
 ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} \
-    "cd ~/flink-deploy && docker-compose down 2>/dev/null || true"
+    "cd ~/flink-deploy && docker compose down 2>/dev/null || true"
 echo "✅ JobManager stopped"
 echo ""
 
