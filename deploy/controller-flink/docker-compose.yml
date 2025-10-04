@@ -4,7 +4,6 @@ services:
   flink-jobmanager:
     image: flink-nexmark:latest
     container_name: flink-jobmanager
-    hostname: flink-jobmanager
     command: jobmanager
     environment:
       - |

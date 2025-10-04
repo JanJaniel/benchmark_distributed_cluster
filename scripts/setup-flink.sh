@@ -125,11 +125,27 @@ fi
 echo ""
 
 echo "  Testing JobManager RPC port..."
-if nc -z -w 2 ${CONTROLLER_IP} 6123 2>/dev/null; then
-    echo "  ✅ JobManager RPC port 6123 is open"
+# Try with nc first, fallback to netstat/ss if nc is not available
+if command -v nc &> /dev/null; then
+    if nc -z -w 2 ${CONTROLLER_IP} 6123 2>/dev/null; then
+        echo "  ✅ JobManager RPC port 6123 is open"
+    else
+        echo "  ❌ JobManager RPC port 6123 not accessible"
+    fi
+elif command -v netstat &> /dev/null; then
+    if ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "netstat -tuln | grep -q ':6123.*LISTEN'" 2>/dev/null; then
+        echo "  ✅ JobManager RPC port 6123 is listening"
+    else
+        echo "  ❌ JobManager RPC port 6123 not listening"
+    fi
+elif command -v ss &> /dev/null; then
+    if ssh -o LogLevel=ERROR ${CLUSTER_USER}@${CONTROLLER_IP} "ss -tuln | grep -q ':6123.*LISTEN'" 2>/dev/null; then
+        echo "  ✅ JobManager RPC port 6123 is listening"
+    else
+        echo "  ❌ JobManager RPC port 6123 not listening"
+    fi
 else
-    echo "  ❌ JobManager RPC port 6123 not accessible"
-    echo "  Debug: Check if JobManager is running: ssh ${CLUSTER_USER}@${CONTROLLER_IP} 'docker ps | grep flink-jobmanager'"
+    echo "  ⚠️  Cannot test port (nc/netstat/ss not available) - assuming OK"
 fi
 echo ""
 

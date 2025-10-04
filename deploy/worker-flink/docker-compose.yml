@@ -4,7 +4,6 @@ services:
   flink-worker:
     image: flink-nexmark:latest
     container_name: flink-worker-${NODE_ID}
-    hostname: flink-worker-${NODE_ID}
     command: taskmanager
     environment:
       - |
@@ -12,6 +11,7 @@ services:
         jobmanager.rpc.address: 192.168.2.70
         jobmanager.rpc.port: 6123
         taskmanager.host: ${WORKER_IP}
+        taskmanager.rpc.port: 6122
         taskmanager.numberOfTaskSlots: 4
         parallelism.default: 9
       - KAFKA_BOOTSTRAP_SERVERS=192.168.2.70:9094
